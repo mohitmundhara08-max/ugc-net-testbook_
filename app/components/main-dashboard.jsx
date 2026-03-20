@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   LineChart,
   Line,
@@ -13,7 +13,6 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 
-// All 25 UGC NET Channels
 const allChannels = [
   { subject: 'Common', username: '@testbook_ugcnet', subs: 40637, posts: 12, viewRate: 8.5, avgViews: 3.4 },
   { subject: 'Paper 1', username: '@pritipaper1', teacher: 'Priti', subs: 21161, posts: 11, viewRate: 8.9, avgViews: 1.9 },
@@ -52,8 +51,7 @@ const mockChartData = [
   { date: 'Mar 19', subscribers: 232400, viewRate: 7.8 },
 ];
 
-// Get last 7 dates
-const getLastSevenDates = () => {
+function getLastSevenDates() {
   const dates = [];
   for (let i = 6; i >= 0; i--) {
     const d = new Date();
@@ -61,36 +59,28 @@ const getLastSevenDates = () => {
     dates.push(d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }));
   }
   return dates;
-};
+}
 
 export default function MainDashboard() {
   const [activeTab, setActiveTab] = useState('channel-analytics');
   const [selectedSubject, setSelectedSubject] = useState('Common');
-  const [selectedDate, setSelectedDate] = useState(null);
+  const [selectedDate, setSelectedDate] = useState('');
   const [expandedChannel, setExpandedChannel] = useState(null);
 
-  const lastSevenDates = useMemo(() => getLastSevenDates(), []);
-  const defaultDate = useMemo(() => lastSevenDates[lastSevenDates.length - 1], [lastSevenDates]);
-  
-  // Set default date on mount
-  useEffect(() => {
-    if (!selectedDate && defaultDate) {
-      setSelectedDate(defaultDate);
-    }
-  }, [defaultDate, selectedDate]);
+  const lastSevenDates = getLastSevenDates();
 
-  const uniqueSubjects = useMemo(() => {
-    const subjects = [...new Set(allChannels.map(ch => ch.subject))];
-    return subjects;
+  useEffect(() => {
+    if (!selectedDate && lastSevenDates.length > 0) {
+      setSelectedDate(lastSevenDates[lastSevenDates.length - 1]);
+    }
   }, []);
 
+  const uniqueSubjects = Array.from(new Set(allChannels.map(ch => ch.subject)));
   const totalSubs = allChannels.reduce((sum, ch) => sum + ch.subs, 0);
   const totalPosts = allChannels.reduce((sum, ch) => sum + ch.posts, 0);
   const avgViewRate = (allChannels.reduce((sum, ch) => sum + ch.viewRate, 0) / allChannels.length).toFixed(1);
 
-  const getChannelsBySubject = (subject) => {
-    return allChannels.filter(ch => ch.subject === subject);
-  };
+  const channelsBySubject = allChannels.filter(ch => ch.subject === selectedSubject);
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white">
@@ -162,7 +152,7 @@ export default function MainDashboard() {
               </div>
             </div>
 
-            {/* Subject Buttons - Sliding Format */}
+            {/* Subject Buttons - Sliding */}
             <div className="flex gap-2 overflow-x-auto pb-2 px-1 scrollbar-hide">
               {uniqueSubjects.map((subject) => (
                 <button
@@ -181,7 +171,7 @@ export default function MainDashboard() {
 
             {/* Channels */}
             <div className="space-y-4">
-              {getChannelsBySubject(selectedSubject).map((channel) => (
+              {channelsBySubject.map((channel) => (
                 <div key={channel.username} className="bg-white rounded-lg shadow overflow-hidden">
                   <div
                     className="p-4 cursor-pointer hover:bg-gray-50"
@@ -257,7 +247,6 @@ export default function MainDashboard() {
                 <p className="text-gray-500 text-sm mt-2">Share competitor Telegram handles to populate this section</p>
               </div>
             </div>
-
           </div>
         )}
 
@@ -270,13 +259,11 @@ export default function MainDashboard() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="bg-white p-6 rounded-lg shadow border-l-4 border-blue-500">
                 <h4 className="font-bold text-gray-900 mb-3">📈 Network Reach</h4>
-                <p className="text-sm text-gray-700 leading-relaxed">
-                  Total: {totalSubs.toLocaleString()} | 25 channels | {avgViewRate}% avg engagement
-                </p>
+                <p className="text-sm text-gray-700">Total: {totalSubs.toLocaleString()} | 25 channels | {avgViewRate}% avg</p>
               </div>
               <div className="bg-white p-6 rounded-lg shadow border-l-4 border-green-500">
                 <h4 className="font-bold text-gray-900 mb-3">📊 Top Channel</h4>
-                <p className="text-sm text-gray-700">Common (@testbook_ugcnet)<br/>40.6K subscribers</p>
+                <p className="text-sm text-gray-700">Common (@testbook_ugcnet) - 40.6K subscribers</p>
               </div>
               <div className="bg-white p-6 rounded-lg shadow border-l-4 border-amber-500">
                 <h4 className="font-bold text-gray-900 mb-3">📝 Activity</h4>
@@ -319,7 +306,7 @@ export default function MainDashboard() {
           <div>
             <div className="bg-blue-100 p-8 rounded-lg text-center border-l-4 border-blue-600">
               <p className="text-blue-900 font-bold text-lg">📊 Competitive Intel</p>
-              <p className="text-blue-700 mt-2">Share competitor handles to populate</p>
+              <p className="text-blue-700 mt-2">Waiting for competitor handles...</p>
             </div>
           </div>
         )}
