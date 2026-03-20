@@ -1,5 +1,7 @@
-import MainDashboard from './components/main-dashboard'
-
-export default function Home() {
-  return <MainDashboard />
+export default function Page() {
+  return (
+    <div style={{ padding: '40px', textAlign: 'center' }}>
+      <h1>✅ Page Works!</h1>
+    </div>
+  )
 }
