@@ -1,5 +1,3 @@
-import MainDashboard from './components/main-dashboard'
-
 export default function Home() {
-  return <MainDashboard />
+  return <h1>Hello World</h1>
 }
