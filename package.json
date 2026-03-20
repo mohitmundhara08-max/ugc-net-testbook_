@@ -1,6 +1,7 @@
 {
   "name": "ugc-net-testbook-dashboard",
   "version": "1.0.0",
+  "description": "UGC NET Testbook Telegram Channel Dashboard",
   "private": true,
   "scripts": {
     "dev": "next dev",
