@@ -1,3 +1,5 @@
+export const maxDuration = 30;
+
 export async function GET() {
   const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 
@@ -29,50 +31,47 @@ export async function GET() {
     { username: 'testbook_gauravsir', label: 'Physical Education' },
   ];
 
-  // Fallback static data (used if no bot token)
   const staticSubs = [40914,21161,15125,11932,3897,28967,13400,6204,5496,4887,4212,3418,2976,1424,1376,1249,1201,1085,908,847,763,752,696,623,112];
 
   let channels = [];
+  let isLive = false;
 
   if (BOT_TOKEN) {
     const results = await Promise.allSettled(
       usernames.map(async (ch, i) => {
         try {
-          const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/getChat?chat_id=@${ch.username}`);
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 8000);
+          const res = await fetch(
+            `https://api.telegram.org/bot${BOT_TOKEN}/getChatMemberCount?chat_id=@${ch.username}`,
+            { signal: controller.signal }
+          );
+          clearTimeout(timeout);
           const data = await res.json();
-          if (data.ok) {
-            const countRes = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/getChatMemberCount?chat_id=@${ch.username}`);
-            const countData = await countRes.json();
-            return {
-              username: ch.username,
-              label: ch.label,
-              title: data.result?.title || ch.label,
-              description: data.result?.description || '',
-              subscribers: countData.ok ? countData.result : staticSubs[i],
-            };
-          }
-        } catch {}
-        return { username: ch.username, label: ch.label, title: ch.label, description: '', subscribers: staticSubs[i] };
+          return {
+            username: ch.username, label: ch.label, title: ch.label,
+            description: '', subscribers: data.ok ? data.result : staticSubs[i], live: data.ok,
+          };
+        } catch {
+          return { username: ch.username, label: ch.label, title: ch.label, description: '', subscribers: staticSubs[i], live: false };
+        }
       })
     );
-    channels = results.map((r, i) => r.status === 'fulfilled' ? r.value : { username: usernames[i].username, label: usernames[i].label, title: usernames[i].label, description: '', subscribers: staticSubs[i] });
+    channels = results.map((r, i) =>
+      r.status === 'fulfilled' ? r.value
+      : { username: usernames[i].username, label: usernames[i].label, title: usernames[i].label, description: '', subscribers: staticSubs[i], live: false }
+    );
+    isLive = channels.some(c => c.live);
   } else {
-    channels = usernames.map((ch, i) => ({ username: ch.username, label: ch.label, title: ch.label, description: '', subscribers: staticSubs[i] }));
+    channels = usernames.map((ch, i) => ({
+      username: ch.username, label: ch.label, title: ch.label, description: '', subscribers: staticSubs[i], live: false,
+    }));
   }
 
   const totalSubscribers = channels.reduce((sum, c) => sum + c.subscribers, 0);
-  const fetchedAt = new Date().toISOString();
-
-  // Build daily snapshot for trends
-  const today = fetchedAt.slice(0, 10);
-  const snapshot = { date: today, totalSubscribers, channels: channels.map(c => ({ username: c.username, subscribers: c.subscribers })) };
 
   return Response.json({
-    success: true,
-    totalSubscribers,
-    channels,
-    snapshot,
-    fetchedAt,
-    isLive: !!BOT_TOKEN,
+    success: true, totalSubscribers, channels,
+    fetchedAt: new Date().toISOString(), isLive,
   });
 }
