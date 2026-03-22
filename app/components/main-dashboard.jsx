@@ -465,7 +465,7 @@ export default function MainDashboard() {
     <div style={{ minHeight: '100vh', background: '#f9fafb', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '16px' }}>
       <div style={{ width: '48px', height: '48px', border: '4px solid #e5e7eb', borderTop: '4px solid #2563eb', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
       <p style={{ color: '#6b7280', fontWeight: 500 }}>Fetching live channel data...</p>
-      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}} .subject-scroll::-webkit-scrollbar{display:none}`}</style>
     </div>
   );
 
@@ -520,16 +520,16 @@ export default function MainDashboard() {
                 </div>
               ))}
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,380px)', gap: '20px', alignItems: 'start' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', alignItems: 'start' }}>
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px', paddingBottom: '10px', borderBottom: '2px solid #2563eb' }}>
                   <span style={{ width: '12px', height: '12px', background: '#2563eb', borderRadius: '50%' }} />
-                  <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700, color: '#002D5B' }}>Testbook (Core)</h3>
+                  <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700, color: '#002D5B' }}>UGC NET Testbook</h3>
                 </div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '14px' }}>
+                <div className="subject-scroll" style={{ display: 'flex', flexWrap: 'nowrap', gap: '6px', marginBottom: '14px', overflowX: 'auto', paddingBottom: '4px', scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
                   {subjects.map(subj => (
                     <button key={subj} onClick={() => setSelectedSubject(subj)}
-                      style={{ padding: '5px 12px', borderRadius: '20px', border: 'none', background: selectedSubject === subj ? '#2563eb' : '#f3f4f6', color: selectedSubject === subj ? 'white' : '#374151', cursor: 'pointer', fontWeight: 500, fontSize: '12px' }}>
+                      style={{ padding: '5px 12px', borderRadius: '20px', border: 'none', background: selectedSubject === subj ? '#2563eb' : '#f3f4f6', color: selectedSubject === subj ? 'white' : '#374151', cursor: 'pointer', fontWeight: 500, fontSize: '12px', flexShrink: 0, whiteSpace: 'nowrap' }}>
                       {subj}
                     </button>
                   ))}
