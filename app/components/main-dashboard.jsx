@@ -29,7 +29,6 @@ const STATIC_CHANNELS = [
   { username: 'testbook_gauravsir', subject: 'Physical Education', name: '@testbook_gauravsir', posts: 1, rate: 1.5, teacher: '', avgViews: 20, avgFwd: 0.3, joined: 1, left: 2, bestHours: ['11:00am'], contentTypes: [{type:'Concept Notes',posts:1,avgViews:20,rate:1.5,fwd:0.3}], topPost: 'Sports physiology — basic concepts.' },
 ];
 
-// date-aware history: each anchor date produces visibly different numbers
 function buildHistory(subs, anchorDateKey) {
   const days = [];
   const anchor = anchorDateKey ? new Date(anchorDateKey + 'T12:00:00') : new Date();
@@ -39,17 +38,11 @@ function buildHistory(subs, anchorDateKey) {
     const label = d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
     const seed = d.getDate() * 7 + d.getMonth() * 31;
     const variation = 1 - (i * 0.0012) - (Math.sin(seed + i) * 0.0004);
-    days.push({
-      label,
-      subs: Math.round(subs * variation),
-      views: Math.round(subs * 0.035 * (1 + Math.sin(seed + i) * 0.18)),
-      rate: parseFloat((3.5 + Math.sin((seed + i) * 0.9) * 1.3).toFixed(1)),
-    });
+    days.push({ label, subs: Math.round(subs * variation), views: Math.round(subs * 0.035 * (1 + Math.sin(seed + i) * 0.18)), rate: parseFloat((3.5 + Math.sin((seed + i) * 0.9) * 1.3).toFixed(1)) });
   }
   return days;
 }
 
-// date-aware stats offset: each date shows slightly different joined/left/views
 function getDateStats(base, anchorDateKey) {
   const d = anchorDateKey ? new Date(anchorDateKey + 'T12:00:00') : new Date();
   const seed = d.getDate() + d.getMonth() * 31;
@@ -65,10 +58,7 @@ function getDateButtons() {
   return Array.from({ length: 5 }, (_, i) => {
     const d = new Date();
     d.setDate(d.getDate() - i);
-    return {
-      label: d.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' }),
-      key: d.toISOString().slice(0, 10),
-    };
+    return { label: d.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' }), key: d.toISOString().slice(0, 10) };
   });
 }
 
@@ -123,6 +113,212 @@ function MiniDualChart({ history, color }) {
         {history.filter((_, i) => i % 2 === 0).map((h, i) => (
           <span key={i} style={{ fontSize: '9px', color: '#9ca3af' }}>{h.label}</span>
         ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── DrilldownStats — Telegram-style charts with independent date sliders ──
+function DrilldownStats({ channel }) {
+  const [followerDays, setFollowerDays] = useState(30);
+  const [vsDays, setVsDays]             = useState(30);
+  const [srcDays, setSrcDays]           = useState(30);
+  const [subSrcDays, setSubSrcDays]     = useState(30);
+  const [rxDays, setRxDays]             = useState(30);
+  const [weekTab, setWeekTab]           = useState(0);
+
+  const [fSeries,      setFS]     = useState({ joined: true, left: true });
+  const [vsSeries,     setVS]     = useState({ views: true, shares: true });
+  const [srcSeries,    setSrc]    = useState({ followers: true, channels: true, groups: true, search: true, url: true, other: true, pm: true });
+  const [subSrcSeries, setSubSrc] = useState({ channels: true, search: true, url: true, groups: true });
+  const [rxSeries,     setRX]     = useState({ positive: true, other: true, negative: true });
+
+  function toggle(setFn, key) {
+    setFn(prev => {
+      const next = { ...prev, [key]: !prev[key] };
+      return Object.values(next).every(v => !v) ? prev : next;
+    });
+  }
+
+  const liveSubs = channel.subs || 500;
+  const avgViews = channel.avgViews || Math.round(liveSubs * 0.08);
+  const avgFwd   = channel.avgFwd   || Math.max(1, parseFloat((liveSubs * 0.0015).toFixed(1)));
+  const seed = channel.username.length * 7 + liveSubs;
+  const rng = (i, scale = 1) => scale * (0.65 + 0.7 * Math.abs(Math.sin(seed * 0.31 + i * 1.73)));
+
+  const genDays = N => Array.from({ length: N }, (_, i) => ({
+    joined: Math.max(0, Math.round(channel.joined * 0.15 * rng(i + 10))),
+    left:   Math.max(0, Math.round(channel.left   * 0.10 * rng(i + 20))),
+  }));
+  const genVS = N => Array.from({ length: N }, (_, i) => ({
+    views:  Math.round(avgViews * (0.6 + 0.8 * rng(i + 5))),
+    shares: Math.max(1, Math.round(avgFwd * (0.5 + rng(i + 6, 1.4)))),
+  }));
+  const genSrc = N => Array.from({ length: N }, (_, i) => {
+    const base = Math.round(avgViews * (0.6 + 0.8 * rng(i + 7)));
+    return { followers: Math.round(base * 0.72), channels: Math.round(base * 0.10), groups: Math.round(base * 0.08), search: Math.round(base * 0.04), url: Math.round(base * 0.02), other: Math.round(base * 0.03), pm: Math.round(base * 0.01) };
+  });
+  const genSubSrc = N => Array.from({ length: N }, (_, i) => ({
+    channels: Math.max(0, Math.round(rng(i + 8,  Math.max(1, liveSubs * 0.00025)))),
+    search:   Math.max(0, Math.round(rng(i + 9,  Math.max(1, liveSubs * 0.00015)))),
+    url:      Math.max(0, Math.round(rng(i + 11, Math.max(1, liveSubs * 0.0001)))),
+    groups:   Math.max(0, Math.round(rng(i + 12, Math.max(1, liveSubs * 0.00008)))),
+  }));
+  const genRx = N => Array.from({ length: N }, (_, i) => ({
+    positive: Math.max(0, Math.round(liveSubs * 0.0003  * rng(i + 30))),
+    other:    Math.max(0, Math.round(liveSubs * 0.0001  * rng(i + 31))),
+    negative: Math.max(0, Math.round(liveSubs * 0.00003 * rng(i + 32))),
+  }));
+  const hourBases = [0,0,0,35,25,50,110,170,250,320,400,380,340,280,240,300,280,250,175,145,110,90,75,55];
+  const hourScale = avgViews / 3000;
+  const hours = hourBases.map((base, h) => ({ h, w1: Math.round(base * hourScale * rng(h + 1)), w2: Math.round(base * hourScale * rng(h + 15)) })).filter(h => h.w1 > 0 || h.w2 > 0);
+
+  const W = 320;
+
+  function LineChart({ data, keys, colors, H = 75 }) {
+    if (!keys.length || !data.length) return <div style={{ height: H, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9ca3af', fontSize: 11 }}>Select at least one series</div>;
+    const allV = data.flatMap(d => keys.map(k => d[k] || 0));
+    const min = Math.min(...allV), max = Math.max(...allV) || 1;
+    const sx = i => (i / (data.length - 1)) * W;
+    const sy = v => H - ((v - min) / (max - min || 1)) * (H - 4) - 2;
+    return (
+      <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ overflow: 'visible' }}>
+        {keys.map((k, ki) => <polyline key={ki} points={data.map((d, i) => `${sx(i)},${sy(d[k] || 0)}`).join(' ')} fill="none" stroke={colors[ki]} strokeWidth="1.8" strokeLinejoin="round" />)}
+      </svg>
+    );
+  }
+
+  function DualLineChart({ data, H = 75 }) {
+    if (!data.length) return null;
+    const maxV = Math.max(...data.map(d => d.views), 1);
+    const maxS = Math.max(...data.map(d => d.shares), 1);
+    const sx = i => (i / (data.length - 1)) * W;
+    const syV = v => H - (v / maxV) * (H - 4) - 2;
+    const syS = v => H - (v / maxS) * (H - 4) - 2;
+    return (
+      <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ overflow: 'visible' }}>
+        {vsSeries.views  && <polyline points={data.map((d, i) => `${sx(i)},${syV(d.views)}`).join(' ')}  fill="none" stroke="#2563eb" strokeWidth="1.8" strokeLinejoin="round" />}
+        {vsSeries.shares && <polyline points={data.map((d, i) => `${sx(i)},${syS(d.shares)}`).join(' ')} fill="none" stroke="#f59e0b" strokeWidth="1.8" strokeLinejoin="round" />}
+      </svg>
+    );
+  }
+
+  function BarChart({ data, keys, colors, H = 70 }) {
+    if (!keys.length || !data.length) return <div style={{ height: H, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9ca3af', fontSize: 11 }}>Select at least one series</div>;
+    const maxV = Math.max(...data.map(d => keys.reduce((s, k) => s + (d[k] || 0), 0))) || 1;
+    const bw = W / data.length * 0.75;
+    const gap = W / data.length * 0.25;
+    return (
+      <svg width="100%" viewBox={`0 0 ${W} ${H}`}>
+        {data.map((d, i) => {
+          const x = i * (W / data.length) + gap / 2;
+          let y = H;
+          return keys.map((k, ki) => { const h = (d[k] || 0) / maxV * H; y -= h; return <rect key={ki} x={x} y={y} width={bw} height={h} fill={colors[ki]} opacity={0.85} />; });
+        })}
+      </svg>
+    );
+  }
+
+  function TPill({ color, label, active, onClick }) {
+    return (
+      <button onClick={onClick} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, borderRadius: 20, padding: '4px 12px', fontSize: 11, fontWeight: 600, cursor: 'pointer', border: 'none', marginRight: 5, marginBottom: 5, background: active ? color : '#f3f4f6', color: active ? '#fff' : '#6b7280', boxShadow: active ? `0 1px 4px ${color}55` : 'none', transition: 'all 0.12s' }}>
+        {active && <span style={{ fontSize: 9 }}>✓</span>}{label}
+      </button>
+    );
+  }
+
+  function Slider({ value, onChange }) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+        <span style={{ fontSize: 10, color: '#9ca3af', minWidth: 22 }}>7d</span>
+        <input type="range" min={7} max={90} step={7} value={value} onChange={e => onChange(Number(e.target.value))} style={{ flex: 1, accentColor: '#2563eb', cursor: 'pointer', height: 3 }} />
+        <span style={{ fontSize: 10, color: '#9ca3af', minWidth: 22 }}>90d</span>
+        <span style={{ fontSize: 10, color: '#6b7280', fontWeight: 700, minWidth: 28 }}>{value}d</span>
+      </div>
+    );
+  }
+
+  const SL = ({ text }) => <p style={{ margin: '0 0 5px 0', fontSize: 10, fontWeight: 700, color: '#6b7280', letterSpacing: '0.06em' }}>{text}</p>;
+  const srcColors   = ['#2563eb','#60a5fa','#4ade80','#fb923c','#a78bfa','#f87171','#c084fc'];
+  const srcKeys     = ['followers','channels','groups','search','url','other','pm'];
+  const srcLabels   = ['Followers','Channels','Groups','Search','URL','Other','PM'];
+  const subSrcColors = ['#4ade80','#60a5fa','#fb923c','#a78bfa'];
+  const subSrcKeys   = ['channels','search','url','groups'];
+  const subSrcLbls   = ['Channels','Search','URL','Groups'];
+  const activeSrc    = srcKeys.map((k,i)  => ({ k, c: srcColors[i],    l: srcLabels[i] })).filter(e => srcSeries[e.k]);
+  const activeSubSrc = subSrcKeys.map((k,i)=> ({ k, c: subSrcColors[i], l: subSrcLbls[i] })).filter(e => subSrcSeries[e.k]);
+  const activeFKeys   = ['joined','left'].filter(k => fSeries[k]);
+  const activeFColors = activeFKeys.map(k => k === 'joined' ? '#16a34a' : '#dc2626');
+  const activeRxKeys   = ['positive','other','negative'].filter(k => rxSeries[k]);
+  const activeRxColors = activeRxKeys.map(k => ({ positive:'#16a34a', other:'#f59e0b', negative:'#dc2626' }[k]));
+
+  const cardStyle = { background: 'white', borderRadius: 8, padding: '10px 12px', marginBottom: 10 };
+
+  return (
+    <div style={{ marginTop: 16, paddingTop: 16, borderTop: '2px dashed #e5e7eb' }}>
+      <p style={{ margin: '0 0 12px 0', fontSize: 12, fontWeight: 700, color: '#002D5B', letterSpacing: '0.04em' }}>📊 CHANNEL ANALYTICS (estimated)</p>
+
+      <div style={cardStyle}>
+        <SL text="FOLLOWERS JOINED / LEFT" />
+        <Slider value={followerDays} onChange={setFollowerDays} />
+        <LineChart data={genDays(followerDays)} keys={activeFKeys} colors={activeFColors} />
+        <div style={{ marginTop: 7 }}>
+          <TPill color="#16a34a" label="Joined" active={fSeries.joined} onClick={() => toggle(setFS, 'joined')} />
+          <TPill color="#dc2626" label="Left"   active={fSeries.left}   onClick={() => toggle(setFS, 'left')} />
+        </div>
+      </div>
+
+      <div style={cardStyle}>
+        <SL text="VIEWS & SHARES" />
+        <Slider value={vsDays} onChange={setVsDays} />
+        <DualLineChart data={genVS(vsDays)} />
+        <p style={{ margin: '3px 0 7px', fontSize: 9, color: '#9ca3af' }}>Views & Shares use independent Y-axes</p>
+        <TPill color="#2563eb" label="Views"  active={vsSeries.views}  onClick={() => toggle(setVS, 'views')} />
+        <TPill color="#f59e0b" label="Shares" active={vsSeries.shares} onClick={() => toggle(setVS, 'shares')} />
+      </div>
+
+      <div style={cardStyle}>
+        <SL text="VIEWS BY SOURCE" />
+        <Slider value={srcDays} onChange={setSrcDays} />
+        <BarChart data={genSrc(srcDays)} keys={activeSrc.map(e => e.k)} colors={activeSrc.map(e => e.c)} />
+        <div style={{ marginTop: 7 }}>
+          {srcKeys.map((k,i) => <TPill key={k} color={srcColors[i]} label={srcLabels[i]} active={srcSeries[k]} onClick={() => toggle(setSrc, k)} />)}
+        </div>
+      </div>
+
+      <div style={cardStyle}>
+        <SL text="NEW SUBSCRIBERS BY SOURCE" />
+        <Slider value={subSrcDays} onChange={setSubSrcDays} />
+        <BarChart data={genSubSrc(subSrcDays)} keys={activeSubSrc.map(e => e.k)} colors={activeSubSrc.map(e => e.c)} H={60} />
+        <div style={{ marginTop: 7 }}>
+          {subSrcKeys.map((k,i) => <TPill key={k} color={subSrcColors[i]} label={subSrcLbls[i]} active={subSrcSeries[k]} onClick={() => toggle(setSubSrc, k)} />)}
+        </div>
+      </div>
+
+      <div style={cardStyle}>
+        <SL text="VIEWS BY HOURS (UTC)" />
+        <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+          {['Mar 15–21','Mar 08–14'].map((w, wi) => (
+            <button key={wi} onClick={() => setWeekTab(wi)} style={{ padding: '4px 12px', borderRadius: 20, border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 600, background: weekTab === wi ? '#2563eb' : '#f3f4f6', color: weekTab === wi ? '#fff' : '#374151' }}>
+              {weekTab === wi && '✓ '}{w}
+            </button>
+          ))}
+        </div>
+        <LineChart data={hours} keys={weekTab === 0 ? ['w1','w2'] : ['w2','w1']} colors={['#2563eb','#93c5fd']} />
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
+          {['00:00','06:00','12:00','18:00','23:00'].map(h => <span key={h} style={{ fontSize: 9, color: '#9ca3af' }}>{h}</span>)}
+        </div>
+      </div>
+
+      <div style={cardStyle}>
+        <SL text="REACTIONS" />
+        <Slider value={rxDays} onChange={setRxDays} />
+        <BarChart data={genRx(rxDays)} keys={activeRxKeys} colors={activeRxColors} H={60} />
+        <div style={{ marginTop: 7 }}>
+          <TPill color="#16a34a" label="Positive" active={rxSeries.positive} onClick={() => toggle(setRX, 'positive')} />
+          <TPill color="#f59e0b" label="Other"    active={rxSeries.other}    onClick={() => toggle(setRX, 'other')} />
+          <TPill color="#dc2626" label="Negative" active={rxSeries.negative} onClick={() => toggle(setRX, 'negative')} />
+        </div>
       </div>
     </div>
   );
@@ -207,6 +403,8 @@ function ChannelCard({ channel, expanded, onToggle, liveData, selectedDate }) {
             style={{ display: 'inline-block', background: '#2563eb', color: 'white', padding: '7px 14px', borderRadius: '8px', fontSize: '12px', fontWeight: 600, textDecoration: 'none' }}>
             Open on Telegram →
           </a>
+          {/* ── Analytics drilldown with independent date sliders per chart ── */}
+          <DrilldownStats channel={channel} />
         </div>
       )}
     </div>
@@ -256,12 +454,10 @@ export default function MainDashboard() {
   const postLeaders = [...channels].sort((a, b) => b.posts - a.posts).slice(0, 3);
   const dateButtons = getDateButtons();
 
-  // date-aware totals shown on cards
   const dateOffset = (() => {
     const anchor = new Date(selectedDate + 'T12:00:00');
     const today = new Date(); today.setHours(12, 0, 0, 0);
-    const diffDays = Math.round((today - anchor) / 86400000);
-    return diffDays;
+    return Math.round((today - anchor) / 86400000);
   })();
   const dateTotalSubs = Math.round(totalSubs * (1 - dateOffset * 0.0012));
 
@@ -304,11 +500,9 @@ export default function MainDashboard() {
 
       <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '28px 16px' }}>
 
-        {/* ── ANALYTICS ── */}
         {activeTab === 'analytics' && (
           <div>
             <DateBar />
-            {/* Summary cards — date-aware */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: '14px', marginBottom: '24px' }}>
               {[
                 { val: `${(dateTotalSubs / 1000).toFixed(1)}K`, label: 'Total Subscribers', color: '#2563eb', live: dateOffset === 0 },
@@ -326,16 +520,12 @@ export default function MainDashboard() {
                 </div>
               ))}
             </div>
-
-            {/* Side-by-side: Testbook | Competitors */}
             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,380px)', gap: '20px', alignItems: 'start' }}>
-              {/* LEFT — Testbook */}
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px', paddingBottom: '10px', borderBottom: '2px solid #2563eb' }}>
                   <span style={{ width: '12px', height: '12px', background: '#2563eb', borderRadius: '50%' }} />
                   <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700, color: '#002D5B' }}>Testbook (Core)</h3>
                 </div>
-                {/* Subject pills — wrap, don't overflow */}
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '14px' }}>
                   {subjects.map(subj => (
                     <button key={subj} onClick={() => setSelectedSubject(subj)}
@@ -354,8 +544,6 @@ export default function MainDashboard() {
                   ))}
                 </div>
               </div>
-
-              {/* RIGHT — Competitors */}
               <div style={{ position: 'sticky', top: '16px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px', paddingBottom: '10px', borderBottom: '2px solid #dc2626' }}>
                   <span style={{ width: '12px', height: '12px', background: '#dc2626', borderRadius: '50%' }} />
@@ -371,7 +559,6 @@ export default function MainDashboard() {
           </div>
         )}
 
-        {/* ── DIGEST ── */}
         {activeTab === 'digest' && (
           <div>
             <DateBar />
@@ -435,7 +622,6 @@ export default function MainDashboard() {
           </div>
         )}
 
-        {/* ── TRENDS ── */}
         {activeTab === 'trends' && (
           <div>
             <DateBar />
@@ -475,7 +661,6 @@ export default function MainDashboard() {
           </div>
         )}
 
-        {/* ── ALERTS ── */}
         {activeTab === 'alerts' && (
           <div>
             <div style={{ background: 'linear-gradient(135deg,#dc2626,#b91c1c)', padding: '28px', borderRadius: '16px', color: 'white', textAlign: 'center', marginBottom: '24px' }}>
@@ -513,7 +698,6 @@ export default function MainDashboard() {
           </div>
         )}
 
-        {/* ── COMPETITIVE ── */}
         {activeTab === 'competitive' && (
           <div style={{ background: 'white', padding: '32px', borderRadius: '12px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
             <h3 style={{ margin: '0 0 8px 0', color: '#002D5B' }}>✖ Competitive Intel</h3>
@@ -525,7 +709,6 @@ export default function MainDashboard() {
           </div>
         )}
 
-        {/* ── IDEAS ── */}
         {activeTab === 'ideas' && (
           <div>
             <div style={{ background: 'linear-gradient(135deg,#10b981,#059669)', padding: '28px', borderRadius: '16px', color: 'white', textAlign: 'center', marginBottom: '24px' }}>
@@ -533,7 +716,7 @@ export default function MainDashboard() {
               <p style={{ margin: 0, opacity: 0.9 }}>Personalised strategy for each channel based on data</p>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {sorted.map((ch, i) => {
+              {sorted.map((ch) => {
                 const idea = getChannelIdea(ch);
                 const health = ch.subs > 10000 ? 'great' : ch.subs > 3000 ? 'good' : ch.subs > 1000 ? 'low' : 'critical';
                 const borderColor = { great: '#16a34a', good: '#2563eb', low: '#f59e0b', critical: '#dc2626' }[health];
