@@ -76,7 +76,7 @@ function buildHistory(channel, anchorDateKey) {
     const joined = Math.max(1, Math.round(channel.joined * (0.8 + (seed % 5) * 0.1)));
     const left   = Math.max(1, Math.round(channel.left   * (0.7 + (seed % 4) * 0.1)));
     const rate   = parseFloat((channel.rate * (0.9 + (seed % 5) * 0.04)).toFixed(1));
-    const posts  = Math.max(1, Math.round(channel.posts  * (0.75 + (seed % 5) * 0.1)));
+    const posts  = channel.posts; // weekly total — Telegram API doesn't provide per-day counts
     days.push({ label, subs: daySubs, rate, net: joined - left, joined, left, posts });
   }
   return days;
@@ -90,7 +90,6 @@ function getDateStats(base, anchorDateKey) {
     left: Math.max(1, Math.round(base.left * (0.7 + (seed % 4) * 0.1))),
     avgViews: Math.round(base.avgViews * (0.88 + (seed % 6) * 0.04)),
     rate: parseFloat((base.rate * (0.9 + (seed % 5) * 0.04)).toFixed(1)),
-    posts: Math.max(1, Math.round(base.posts * (0.75 + (seed % 5) * 0.1))),
   };
 }
 
@@ -130,17 +129,13 @@ function MiniDualChart({ history, color }) {
   const minSubs = Math.min(...history.map(h => h.subs));
   const maxRate = Math.max(...history.map(h => h.rate));
   const minRate = Math.min(...history.map(h => h.rate));
-  const maxPosts = Math.max(...history.map(h => h.posts));
-  const minPosts = Math.min(...history.map(h => h.posts));
 
   const sx  = i => (i / (history.length - 1)) * W;
   const syS = v => H - ((v - minSubs)  / (maxSubs  - minSubs  || 1)) * (H - 10) - 5;
   const syR = v => H - ((v - minRate)  / (maxRate  - minRate  || 1)) * (H - 10) - 5;
-  const syP = v => H - ((v - minPosts) / (maxPosts - minPosts || 1)) * (H - 10) - 5;
 
   const subsPts  = history.map((h, i) => `${sx(i)},${syS(h.subs)}`).join(' ');
   const ratePts  = history.map((h, i) => `${sx(i)},${syR(h.rate)}`).join(' ');
-  const postsPts = history.map((h, i) => `${sx(i)},${syP(h.posts)}`).join(' ');
 
   const subsTicks  = [minSubs, (minSubs+maxSubs)/2, maxSubs].map(v => v >= 1000 ? `${(v/1000).toFixed(1)}K` : `${Math.round(v)}`);
   const rateTicks  = [minRate, ((minRate+maxRate)/2).toFixed(1), maxRate].map(v => `${v}%`);
@@ -167,7 +162,7 @@ function MiniDualChart({ history, color }) {
                 <div>Subs: <span style={{ color: `${color}ee`, fontWeight: 700 }}>{h.subs.toLocaleString('en-IN')}</span></div>
                 <div>View Rate: <span style={{ color: '#fbbf24', fontWeight: 700 }}>{h.rate}%</span></div>
                 <div>Net Subs: <span style={{ color: h.net >= 0 ? '#4ade80' : '#f87171', fontWeight: 700 }}>{h.net >= 0 ? '+' : ''}{h.net}</span></div>
-                <div>Posts: <span style={{ color: '#86efac', fontWeight: 700 }}>{h.posts}</span></div>
+                <div>Posts/wk: <span style={{ color: '#86efac', fontWeight: 700 }}>{h.posts}</span></div>
               </div>
             )}
             {hovered === i && <div style={{ position: 'absolute', top: 0, left: '50%', width: 1, height: '100%', background: 'rgba(0,0,0,0.1)' }} />}
@@ -184,14 +179,11 @@ function MiniDualChart({ history, color }) {
         <polyline points={subsPts} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
         {/* Rate line — dashed amber */}
         <polyline points={ratePts} fill="none" stroke="#f59e0b" strokeWidth="1.5" strokeDasharray="3,2" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
-        {/* Posts line — dotted green */}
-        <polyline points={postsPts} fill="none" stroke="#16a34a" strokeWidth="1.5" strokeDasharray="1,3" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
         {/* Dots */}
         {history.map((h, i) => (
           <g key={i}>
             <circle cx={sx(i)} cy={syS(h.subs)}  r={hovered===i?'2.8':'1.8'} fill={hovered===i?'white':color}    stroke={color}    strokeWidth="1.2" vectorEffect="non-scaling-stroke" />
             <circle cx={sx(i)} cy={syR(h.rate)}  r={hovered===i?'2.4':'1.4'} fill={hovered===i?'white':'#f59e0b'} stroke="#f59e0b"  strokeWidth="1"   vectorEffect="non-scaling-stroke" />
-            <circle cx={sx(i)} cy={syP(h.posts)} r={hovered===i?'2.4':'1.4'} fill={hovered===i?'white':'#16a34a'} stroke="#16a34a"  strokeWidth="1"   vectorEffect="non-scaling-stroke" />
           </g>
         ))}
       </svg>
@@ -210,9 +202,6 @@ function MiniDualChart({ history, color }) {
         </span>
         <span style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 8, color: '#f59e0b' }}>
           <span style={{ width: 14, height: 0, borderTop: '1.5px dashed #f59e0b', display: 'inline-block' }} />Rate %
-        </span>
-        <span style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 8, color: '#16a34a' }}>
-          <span style={{ width: 14, height: 0, borderTop: '1.5px dotted #16a34a', display: 'inline-block' }} />Posts
         </span>
         <span style={{ fontSize: 8, color: '#9ca3af' }}>X: Date</span>
       </div>
@@ -502,7 +491,7 @@ function ChannelCard({ channel, expanded, onToggle, liveData, selectedDate }) {
                 </a>
               </span>
               <span style={{ background: '#dbeafe', color: '#1e40af', padding: '1px 7px', borderRadius: '20px', fontSize: '10px', fontWeight: 600 }}>Own</span>
-              <span style={{ fontSize: '11px', color: '#6b7280' }}>{dateSubs.toLocaleString('en-IN')} subs · {ds.posts} posts</span>
+              <span style={{ fontSize: '11px', color: '#6b7280' }}>{dateSubs.toLocaleString('en-IN')} subs · {channel.posts} posts/wk</span>
             </div>
           </div>
           <span style={{ color: '#9ca3af', fontSize: '11px', whiteSpace: 'nowrap', marginLeft: '8px' }}>{expanded ? '▲' : 'expand ▶'}</span>
