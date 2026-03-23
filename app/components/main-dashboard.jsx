@@ -630,8 +630,8 @@ export default function MainDashboard() {
   const [lastFetched, setLastFetched] = useState(null);
   const [alerts, setAlerts] = useState([]);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().slice(0, 10));
-  const [competitorData, setCompetitorData] = useState({}); // username → {title, subscribers}
-  const [competitorLoading, setCompetitorLoading] = useState(false);
+  const [competitorData, setCompetitorData] = useState({});
+  const [competitorLoading, setCompetitorLoading] = useState(true);
 
   useEffect(() => {
     fetch('/api/channels').then(r => r.json()).then(data => {
@@ -909,36 +909,42 @@ export default function MainDashboard() {
               ))}
             </div>
 
-            {/* What worked / What didn't */}
+            {/* What worked / What didn't - uses date-aware rates */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '20px' }}>
               <div style={{ background: 'white', borderRadius: '12px', padding: '18px 20px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
-                <h4 style={{ margin: '0 0 14px 0', fontSize: '14px', fontWeight: 700, color: '#16a34a' }}>✅ What Worked</h4>
-                {[...channels].sort((a, b) => b.rate - a.rate).slice(0, 4).map((ch, i) => (
-                  <div key={ch.username} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: i < 3 ? '1px solid #f3f4f6' : 'none' }}>
-                    <div>
-                      <p style={{ margin: 0, fontSize: '13px', fontWeight: 600, color: '#002D5B' }}>{ch.title || ch.subject}</p>
-                      <p style={{ margin: 0, fontSize: '11px', color: '#9ca3af' }}>{ch.name}</p>
+                <h4 style={{ margin: '0 0 14px 0', fontSize: '14px', fontWeight: 700, color: '#16a34a' }}>✅ Top Performers</h4>
+                {[...channels].sort((a, b) => getDateStats(b, selectedDate).rate - getDateStats(a, selectedDate).rate).slice(0, 4).map((ch, i) => {
+                  const ds = getDateStats(ch, selectedDate);
+                  return (
+                    <div key={ch.username} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: i < 3 ? '1px solid #f3f4f6' : 'none' }}>
+                      <div>
+                        <p style={{ margin: 0, fontSize: '13px', fontWeight: 600, color: '#002D5B' }}>{ch.title || ch.subject}</p>
+                        <p style={{ margin: 0, fontSize: '11px', color: '#9ca3af' }}>{ch.name}</p>
+                      </div>
+                      <span style={{ background: '#dcfce7', color: '#16a34a', padding: '2px 8px', borderRadius: '20px', fontSize: '11px', fontWeight: 700 }}>{ds.rate}% rate</span>
                     </div>
-                    <span style={{ background: '#dcfce7', color: '#16a34a', padding: '2px 8px', borderRadius: '20px', fontSize: '11px', fontWeight: 700 }}>{parseFloat((ch.rate * (0.9 + dateSeed % 5 * 0.04)).toFixed(1))}% rate</span>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
               <div style={{ background: 'white', borderRadius: '12px', padding: '18px 20px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
                 <h4 style={{ margin: '0 0 14px 0', fontSize: '14px', fontWeight: 700, color: '#dc2626' }}>⚠️ Needs Improvement</h4>
-                {[...channels].sort((a, b) => a.rate - b.rate).slice(0, 4).map((ch, i) => (
-                  <div key={ch.username} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: i < 3 ? '1px solid #f3f4f6' : 'none' }}>
-                    <div>
-                      <p style={{ margin: 0, fontSize: '13px', fontWeight: 600, color: '#002D5B' }}>{ch.title || ch.subject}</p>
-                      <p style={{ margin: 0, fontSize: '11px', color: '#9ca3af' }}>{ch.name}</p>
+                {[...channels].sort((a, b) => getDateStats(a, selectedDate).rate - getDateStats(b, selectedDate).rate).slice(0, 4).map((ch, i) => {
+                  const ds = getDateStats(ch, selectedDate);
+                  return (
+                    <div key={ch.username} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: i < 3 ? '1px solid #f3f4f6' : 'none' }}>
+                      <div>
+                        <p style={{ margin: 0, fontSize: '13px', fontWeight: 600, color: '#002D5B' }}>{ch.title || ch.subject}</p>
+                        <p style={{ margin: 0, fontSize: '11px', color: '#9ca3af' }}>{ch.name}</p>
+                      </div>
+                      <span style={{ background: '#fee2e2', color: '#dc2626', padding: '2px 8px', borderRadius: '20px', fontSize: '11px', fontWeight: 700 }}>{ds.rate}% rate</span>
                     </div>
-                    <span style={{ background: '#fee2e2', color: '#dc2626', padding: '2px 8px', borderRadius: '20px', fontSize: '11px', fontWeight: 700 }}>{parseFloat((ch.rate * (0.9 + dateSeed % 5 * 0.04)).toFixed(1))}% rate</span>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
 
             {/* Subscriber movement */}
-            <div style={{ background: 'white', borderRadius: '12px', padding: '18px 20px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+            <div style={{ background: 'white', borderRadius: '12px', padding: '18px 20px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', marginBottom: '16px' }}>
               <h4 style={{ margin: '0 0 14px 0', fontSize: '14px', fontWeight: 600, color: '#002D5B' }}>📊 Channel Subscriber Movement</h4>
               {sorted.map((ch, i) => {
                 const prev = Math.round(ch.subs * (1 - (dateOffset + 1) * 0.0012));
@@ -961,6 +967,39 @@ export default function MainDashboard() {
                 );
               })}
             </div>
+
+            {/* Competitor quick snapshot */}
+            {!competitorLoading && Object.keys(competitorData).length > 0 && (
+              <div style={{ background: 'white', borderRadius: '12px', padding: '18px 20px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+                <h4 style={{ margin: '0 0 4px 0', fontSize: '14px', fontWeight: 600, color: '#002D5B' }}>⚔️ Competitive Snapshot — Where We Stand</h4>
+                <p style={{ margin: '0 0 14px 0', fontSize: '11px', color: '#9ca3af' }}>Live counts · 🟢 = we lead · 🔴 = competitor leads</p>
+                {Object.entries(COMPETITOR_MAP).map(([subjectKey, usernames]) => {
+                  const ownChs = channels.filter(c => getCompetitorKey(c.subject) === subjectKey);
+                  if (!ownChs.length) return null;
+                  const ownMaxSubs = Math.max(...ownChs.map(c => c.subs), 1);
+                  const topComp = usernames.reduce((best, u) => {
+                    const s = competitorData[u.toLowerCase()]?.subscribers ?? 0;
+                    return s > (best.subs ?? 0) ? { username: u, title: competitorData[u.toLowerCase()]?.title || u, subs: s } : best;
+                  }, { subs: 0 });
+                  const weAreAhead = topComp.subs === 0 || ownMaxSubs >= topComp.subs;
+                  const gap = Math.abs(ownMaxSubs - topComp.subs);
+                  return (
+                    <div key={subjectKey} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid #f9fafb' }}>
+                      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                        <span style={{ fontSize: 12 }}>{weAreAhead ? '🟢' : '🔴'}</span>
+                        <span style={{ fontSize: '12px', fontWeight: 600, color: '#002D5B' }}>{subjectKey}</span>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <span style={{ fontSize: '11px', color: weAreAhead ? '#16a34a' : '#dc2626', fontWeight: 600 }}>
+                          {weAreAhead ? `+${gap.toLocaleString('en-IN')} ahead` : `-${gap.toLocaleString('en-IN')} behind`}
+                        </span>
+                        {topComp.subs > 0 && <span style={{ fontSize: '10px', color: '#9ca3af', marginLeft: 6 }}>vs {topComp.title}</span>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 
@@ -968,78 +1007,41 @@ export default function MainDashboard() {
           <div>
             <DateBar />
             <div style={{ marginBottom: '32px' }}>
-              <h3 style={{ margin: '0 0 4px 0', fontSize: '17px', fontWeight: 700, color: '#002D5B' }}>📈 Testbook Channels — View Rate (24h) & Total Views — Last 7 Days</h3>
-              <p style={{ margin: '0 0 18px 0', fontSize: '12px', color: '#9ca3af' }}>Bars: total daily views · Line: view rate (24h) %</p>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                <div>
+                  <h3 style={{ margin: '0 0 2px 0', fontSize: '17px', fontWeight: 700, color: '#002D5B' }}>📈 7-Day Subscriber & View Rate Trend</h3>
+                  <p style={{ margin: 0, fontSize: '12px', color: '#9ca3af' }}>Solid line = subscribers · Dashed amber = view rate % · Hover bars for details</p>
+                </div>
+                <span style={{ fontSize: '11px', color: '#6b7280', background: '#f3f4f6', padding: '4px 10px', borderRadius: '20px' }}>{sorted.length} channels</span>
+              </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(260px,1fr))', gap: '14px' }}>
-                {sorted.slice(0, 6).map((ch, ci) => {
+                {sorted.map((ch, ci) => {
                   const history = buildHistory(ch, selectedDate);
                   const growth = history[history.length - 1].subs - history[0].subs;
-                  const growthPct = ((growth / (history[0].subs || 1)) * 100).toFixed(1);
+                  const growthPct = ((growth / (history[0].subs || 1)) * 100).toFixed(2);
                   const col = TREND_COLORS[ci % TREND_COLORS.length];
+                  const ds = getDateStats(ch, selectedDate);
                   return (
                     <div key={ch.username} style={{ background: 'white', borderRadius: '12px', padding: '14px 16px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
-                      <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginBottom: '4px' }}>
-                        <span style={{ width: '9px', height: '9px', background: col, borderRadius: '50%', flexShrink: 0 }} />
-                        <p style={{ margin: 0, fontWeight: 600, fontSize: '13px', color: '#002D5B' }}>{ch.title || ch.subject}</p>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '4px' }}>
+                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center', minWidth: 0 }}>
+                          <span style={{ width: '9px', height: '9px', background: col, borderRadius: '50%', flexShrink: 0 }} />
+                          <p style={{ margin: 0, fontWeight: 600, fontSize: '13px', color: '#002D5B', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ch.title || ch.subject}</p>
+                        </div>
+                        <span style={{ fontSize: '11px', fontWeight: 700, color: growth >= 0 ? '#16a34a' : '#dc2626', flexShrink: 0, marginLeft: 6 }}>{growth >= 0 ? '▲' : '▼'}{Math.abs(growth)} ({growthPct}%)</span>
                       </div>
-                      <p style={{ margin: '0 0 8px 0', fontSize: '11px', color: '#9ca3af' }}>
-                        {ch.name} · {ch.subs.toLocaleString('en-IN')} subs{' '}
-                        <span style={{ color: growth >= 0 ? '#16a34a' : '#dc2626', fontWeight: 600 }}>{growth >= 0 ? '▲' : '▼'}{Math.abs(growth).toLocaleString('en-IN')} ({growthPct}%)</span>
-                      </p>
+                      <div style={{ display: 'flex', gap: '6px', marginBottom: '8px', flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: '10px', color: '#6b7280' }}>{Math.round(ch.subs * (1 - dateOffset * 0.0012)).toLocaleString('en-IN')} subs</span>
+                        <span style={{ fontSize: '10px', color: '#9ca3af' }}>·</span>
+                        <span style={{ fontSize: '10px', color: '#f59e0b', fontWeight: 600 }}>{ds.rate}% rate</span>
+                        <span style={{ fontSize: '10px', color: '#9ca3af' }}>·</span>
+                        <span style={{ fontSize: '10px', color: '#6b7280' }}>{ch.posts} posts/wk</span>
+                      </div>
                       <MiniDualChart history={history} color={col} />
                     </div>
                   );
                 })}
               </div>
-            </div>
-            <div>
-              <h3 style={{ margin: '0 0 4px 0', fontSize: '17px', fontWeight: 700, color: '#002D5B' }}>📊 Competitors — Live Subscriber Benchmarks</h3>
-              <p style={{ margin: '0 0 16px 0', fontSize: '12px', color: '#9ca3af' }}>All subjects · Live subscriber counts · Blue = OWN, Red left border = competitor ahead</p>
-              {competitorLoading ? (
-                <div style={{ background: 'white', padding: '40px', borderRadius: '12px', textAlign: 'center', color: '#6b7280' }}>🔄 Fetching live competitor data from Telegram…</div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                  {Object.entries(COMPETITOR_MAP).map(([subjectKey, usernames]) => {
-                    const ownChs = channels.filter(c => getCompetitorKey(c.subject) === subjectKey);
-                    if (!ownChs.length) return null;
-                    const ownMaxSubs = Math.max(...ownChs.map(c => c.subs), 1);
-                    const compRows = usernames.map(u => {
-                      const info = competitorData[u.toLowerCase()];
-                      return { username: u, title: info?.title || u, subs: info?.subscribers ?? 0 };
-                    }).sort((a, b) => b.subs - a.subs);
-                    const allRows = [
-                      ...ownChs.map(c => ({ username: c.username, title: c.title || c.subject, subs: c.subs, isOwn: true })),
-                      ...compRows.map(c => ({ ...c, isOwn: false })),
-                    ].sort((a, b) => b.subs - a.subs);
-                    return (
-                      <div key={subjectKey} style={{ background: 'white', borderRadius: '12px', padding: '16px 18px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
-                        <h4 style={{ margin: '0 0 12px 0', fontSize: '14px', fontWeight: 700, color: '#002D5B', borderBottom: '1px solid #f3f4f6', paddingBottom: 8 }}>{subjectKey}</h4>
-                        {allRows.map((row, i) => {
-                          const pct = ownMaxSubs > 0 ? (row.subs / Math.max(...allRows.map(r => r.subs), 1)) * 100 : 0;
-                          return (
-                            <div key={row.username} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 0', borderBottom: i < allRows.length - 1 ? '1px solid #f9fafb' : 'none' }}>
-                              <span style={{ fontSize: 11, color: '#9ca3af', minWidth: 18 }}>#{i + 1}</span>
-                              <div style={{ flex: 1, minWidth: 0 }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 }}>
-                                  <span style={{ fontSize: 12, fontWeight: row.isOwn ? 700 : 500, color: row.isOwn ? '#1e40af' : '#374151', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                    {row.title}{row.isOwn && <span style={{ background: '#dbeafe', color: '#1e40af', fontSize: 9, padding: '1px 5px', borderRadius: 8, marginLeft: 5 }}>OWN</span>}
-                                  </span>
-                                  <span style={{ fontSize: 12, fontWeight: 700, color: row.isOwn ? '#1e40af' : (row.subs > ownMaxSubs ? '#dc2626' : '#374151'), flexShrink: 0, marginLeft: 8 }}>
-                                    {row.subs > 0 ? row.subs.toLocaleString('en-IN') : '—'}
-                                  </span>
-                                </div>
-                                <div style={{ background: '#f3f4f6', borderRadius: 3, height: 4, overflow: 'hidden' }}>
-                                  <div style={{ height: '100%', width: `${pct}%`, background: row.isOwn ? '#2563eb' : (row.subs > ownMaxSubs ? '#dc2626' : '#9ca3af'), borderRadius: 3 }} />
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
             </div>
           </div>
         )}
@@ -1082,13 +1084,75 @@ export default function MainDashboard() {
         )}
 
         {activeTab === 'competitive' && (
-          <div style={{ background: 'white', padding: '32px', borderRadius: '12px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
-            <h3 style={{ margin: '0 0 8px 0', color: '#002D5B' }}>✖ Competitive Intel</h3>
-            <p style={{ color: '#6b7280', fontSize: '14px', marginBottom: '24px' }}>Share competitor @usernames to unlock head-to-head benchmarking.</p>
-            <div style={{ background: '#fef3c7', padding: '40px', borderRadius: '12px', border: '1px dashed #f59e0b', textAlign: 'center' }}>
-              <p style={{ margin: '0 0 4px 0', fontSize: '22px' }}>⏳</p>
-              <p style={{ margin: 0, color: '#92400e', fontWeight: 600 }}>Waiting for competitor handles</p>
+          <div>
+            <div style={{ background: 'linear-gradient(135deg,#dc2626,#b91c1c)', padding: '28px', borderRadius: '16px', color: 'white', textAlign: 'center', marginBottom: '24px' }}>
+              <h2 style={{ margin: '0 0 4px 0', fontSize: '22px' }}>⚔️ Competitive Intelligence</h2>
+              <p style={{ margin: 0, opacity: 0.85 }}>Live subscriber benchmarks across all subjects · {competitorLoading ? 'Fetching...' : `${Object.values(competitorData).filter(c => c.subscribers > 0).length} competitors tracked`}</p>
             </div>
+
+            {/* Network summary */}
+            {!competitorLoading && (() => {
+              const totalOwnSubs = channels.reduce((s, c) => s + c.subs, 0);
+              const totalCompSubs = Object.values(competitorData).reduce((s, c) => s + (c.subscribers || 0), 0);
+              const leading = Object.entries(COMPETITOR_MAP).filter(([key, usernames]) => {
+                const ownMax = Math.max(...channels.filter(c => getCompetitorKey(c.subject) === key).map(c => c.subs), 0);
+                return usernames.some(u => (competitorData[u.toLowerCase()]?.subscribers ?? 0) > ownMax);
+              }).length;
+              return (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(160px,1fr))', gap: '14px', marginBottom: '24px' }}>
+                  {[
+                    { val: totalOwnSubs.toLocaleString('en-IN'), label: 'Total Own Subscribers', color: '#2563eb' },
+                    { val: totalCompSubs > 0 ? totalCompSubs.toLocaleString('en-IN') : '—', label: 'Total Competitor Subs', color: '#dc2626' },
+                    { val: `${Object.keys(COMPETITOR_MAP).length - leading} / ${Object.keys(COMPETITOR_MAP).length}`, label: 'Subjects We Lead', color: '#16a34a' },
+                    { val: `${leading}`, label: 'Subjects Competitors Lead', color: '#f59e0b' },
+                  ].map((c, i) => (
+                    <div key={i} style={{ background: 'white', padding: '16px 18px', borderRadius: '12px', borderLeft: `4px solid ${c.color}`, boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+                      <div style={{ fontSize: '20px', fontWeight: 700, color: '#002D5B' }}>{c.val}</div>
+                      <div style={{ fontSize: '11px', color: '#6b7280', marginTop: 3 }}>{c.label}</div>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+
+            {/* Subject-by-subject benchmark */}
+            {competitorLoading ? (
+              <div style={{ background: 'white', padding: '48px', borderRadius: '12px', textAlign: 'center', color: '#6b7280' }}>
+                <div style={{ width: '32px', height: '32px', border: '3px solid #e5e7eb', borderTop: '3px solid #dc2626', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto 12px' }} />
+                <p style={{ margin: 0, fontWeight: 600 }}>Fetching live data from Telegram for {Object.values(COMPETITOR_MAP).flat().length} competitor channels…</p>
+                <p style={{ margin: '6px 0 0 0', fontSize: '12px', color: '#9ca3af' }}>This takes ~5 seconds. Data refreshes on each page load.</p>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {Object.entries(COMPETITOR_MAP).map(([subjectKey, usernames]) => {
+                  const ownChs = channels.filter(c => getCompetitorKey(c.subject) === subjectKey);
+                  if (!ownChs.length) return null;
+                  const ownMaxSubs = Math.max(...ownChs.map(c => c.subs), 1);
+                  const compData = usernames.map(u => ({ username: u, ...(competitorData[u.toLowerCase()] || { title: u, subscribers: 0, live: false }) }));
+                  const topComp = compData.reduce((best, c) => (c.subscribers > (best?.subscribers ?? 0) ? c : best), null);
+                  const weAreAhead = !topComp || topComp.subscribers <= ownMaxSubs;
+                  return (
+                    <div key={subjectKey} style={{ background: 'white', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+                      {/* Subject header */}
+                      <div style={{ padding: '12px 18px', background: weAreAhead ? '#f0fdf4' : '#fef2f2', borderBottom: '1px solid #f3f4f6', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ fontSize: 14 }}>{weAreAhead ? '🟢' : '🔴'}</span>
+                          <span style={{ fontWeight: 700, fontSize: '14px', color: '#002D5B' }}>{subjectKey}</span>
+                          <span style={{ fontSize: '11px', color: '#6b7280' }}>· {ownChs.map(c => c.title || c.subject).join(', ')}</span>
+                        </div>
+                        <span style={{ fontSize: '12px', fontWeight: 600, color: weAreAhead ? '#16a34a' : '#dc2626' }}>
+                          {weAreAhead ? `Leading · ${ownMaxSubs.toLocaleString('en-IN')} subs` : `Behind · Top comp: ${topComp?.subscribers.toLocaleString('en-IN')}`}
+                        </span>
+                      </div>
+                      {/* Competitor cards */}
+                      <div style={{ padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        <CompetitorList usernames={usernames} competitorData={competitorData} ownMaxSubs={ownMaxSubs} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 
