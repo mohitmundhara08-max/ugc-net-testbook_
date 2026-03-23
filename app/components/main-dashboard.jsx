@@ -29,7 +29,8 @@ const STATIC_CHANNELS = [
   { username: 'testbook_gauravsir', subject: 'Physical Education', name: '@testbook_gauravsir', posts: 1, rate: 1.5, teacher: '', avgViews: 20, avgFwd: 0.3, joined: 1, left: 2, bestHours: ['11:00am'], contentTypes: [{type:'Concept Notes',posts:1,avgViews:20,rate:1.5,fwd:0.3}], topPost: 'Sports physiology — basic concepts.' },
 ];
 
-function buildHistory(subs, anchorDateKey) {
+function buildHistory(channel, anchorDateKey) {
+  const subs = channel.subs;
   const days = [];
   const anchor = anchorDateKey ? new Date(anchorDateKey + 'T12:00:00') : new Date();
   for (let i = 6; i >= 0; i--) {
@@ -38,7 +39,11 @@ function buildHistory(subs, anchorDateKey) {
     const label = d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
     const seed = d.getDate() * 7 + d.getMonth() * 31;
     const variation = 1 - (i * 0.0012) - (Math.sin(seed + i) * 0.0004);
-    days.push({ label, subs: Math.round(subs * variation), views: Math.round(subs * 0.035 * (1 + Math.sin(seed + i) * 0.18)), rate: parseFloat((3.5 + Math.sin((seed + i) * 0.9) * 1.3).toFixed(1)) });
+    const daySubs = Math.round(subs * variation);
+    const joined = Math.max(1, Math.round(channel.joined * (0.8 + (seed % 5) * 0.1)));
+    const left   = Math.max(1, Math.round(channel.left   * (0.7 + (seed % 4) * 0.1)));
+    const posts  = Math.max(1, Math.round(channel.posts  * (0.75 + (seed % 5) * 0.1) / 7));
+    days.push({ label, subs: daySubs, rate: parseFloat((3.5 + Math.sin((seed + i) * 0.9) * 1.3).toFixed(1)), net: joined - left, joined, left, posts });
   }
   return days;
 }
@@ -86,70 +91,88 @@ function MiniBar({ value, max, color }) {
 
 function MiniDualChart({ history, color }) {
   const [hovered, setHovered] = useState(null);
-  const maxSubs  = Math.max(...history.map(h => h.subs));
-  const minSubs  = Math.min(...history.map(h => h.subs));
-  const maxRate  = Math.max(...history.map(h => h.rate));
-  const minRate  = Math.min(...history.map(h => h.rate));
-  const H = 80;
-  const pts = history.map((h, i) => {
-    const x = (i / (history.length - 1)) * 100;
-    const y = H - ((h.rate - minRate) / (maxRate - minRate || 1)) * (H - 12) - 6;
-    return `${x},${y}`;
-  });
-  const rateRange = maxRate - minRate || 1;
-  const rateTicks = [0, 0.5, 1].map(f => (minRate + rateRange * f).toFixed(1));
-  const subsTicks = [0, 0.5, 1].map(f => {
-    const v = minSubs + (maxSubs - minSubs) * f;
-    return v >= 1000 ? `${(v / 1000).toFixed(1)}K` : `${Math.round(v)}`;
-  });
+  const H = 80; const W = 100;
+  const maxSubs = Math.max(...history.map(h => h.subs));
+  const minSubs = Math.min(...history.map(h => h.subs));
+  const maxRate = Math.max(...history.map(h => h.rate));
+  const minRate = Math.min(...history.map(h => h.rate));
+
+  const sx = i => (i / (history.length - 1)) * W;
+  const syS = v => H - ((v - minSubs) / (maxSubs - minSubs || 1)) * (H - 10) - 5;
+  const syR = v => H - ((v - minRate) / (maxRate - minRate || 1)) * (H - 10) - 5;
+
+  const subsPts = history.map((h, i) => `${sx(i)},${syS(h.subs)}`).join(' ');
+  const ratePts = history.map((h, i) => `${sx(i)},${syR(h.rate)}`).join(' ');
+
+  const subsTicks = [minSubs, (minSubs+maxSubs)/2, maxSubs].map(v => v >= 1000 ? `${(v/1000).toFixed(1)}K` : `${Math.round(v)}`);
+  const rateTicks = [minRate, ((minRate+maxRate)/2).toFixed(1), maxRate].map(v => `${v}%`);
+
   return (
-    <div style={{ position: 'relative', paddingLeft: 30, paddingRight: 36, paddingBottom: 18 }}>
-      {/* Left Y-axis: rate % */}
-      <div style={{ position: 'absolute', left: 0, top: 0, height: H, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', width: 28 }}>
-        <span style={{ fontSize: 8, color: color, textAlign: 'right', display: 'block' }}>{rateTicks[2]}%</span>
-        <span style={{ fontSize: 8, color: color, textAlign: 'right', display: 'block' }}>{rateTicks[1]}%</span>
-        <span style={{ fontSize: 8, color: color, textAlign: 'right', display: 'block' }}>{rateTicks[0]}%</span>
+    <div style={{ position: 'relative', paddingLeft: 32, paddingRight: 36, paddingBottom: 32 }}>
+      {/* Left Y-axis: subs */}
+      <div style={{ position: 'absolute', left: 0, top: 0, height: H, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', width: 30 }}>
+        {[subsTicks[2], subsTicks[1], subsTicks[0]].map((t, i) => <span key={i} style={{ fontSize: 8, color: `${color}cc`, textAlign: 'right', display: 'block' }}>{t}</span>)}
       </div>
-      {/* Right Y-axis: subs */}
+      {/* Right Y-axis: rate */}
       <div style={{ position: 'absolute', right: 0, top: 0, height: H, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', width: 34 }}>
-        <span style={{ fontSize: 8, color: `${color}99`, textAlign: 'left', display: 'block' }}>{subsTicks[2]}</span>
-        <span style={{ fontSize: 8, color: `${color}99`, textAlign: 'left', display: 'block' }}>{subsTicks[1]}</span>
-        <span style={{ fontSize: 8, color: `${color}99`, textAlign: 'left', display: 'block' }}>{subsTicks[0]}</span>
+        {[rateTicks[2], rateTicks[1], rateTicks[0]].map((t, i) => <span key={i} style={{ fontSize: 8, color: '#f59e0b', textAlign: 'left', display: 'block' }}>{t}</span>)}
       </div>
-      {/* Bars with tooltip above each */}
-      <div style={{ display: 'flex', alignItems: 'flex-end', gap: '2px', height: `${H}px` }}>
-        {history.map((h, i) => {
-          const barH = Math.max(4, ((h.subs - minSubs) / (maxSubs - minSubs || 1)) * H * 0.75 + 4);
-          const isHov = hovered === i;
-          return (
-            <div key={i} style={{ flex: 1, height: '100%', display: 'flex', alignItems: 'flex-end', position: 'relative', cursor: 'crosshair' }}
-              onMouseEnter={() => setHovered(i)} onMouseLeave={() => setHovered(null)}>
-              {isHov && (
-                <div style={{ position: 'absolute', bottom: barH + 6, left: '50%', transform: 'translateX(-50%)', background: '#002D5B', color: 'white', borderRadius: 6, padding: '4px 8px', fontSize: 10, fontWeight: 600, whiteSpace: 'nowrap', zIndex: 20, pointerEvents: 'none', boxShadow: '0 2px 8px rgba(0,0,0,0.2)' }}>
-                  {h.label}<br/>
-                  <span style={{ color: `${color}dd` }}>{h.subs > 0 ? h.subs.toLocaleString('en-IN') + ' subs' : '—'}</span>
-                  {' · '}<span style={{ color: '#fbbf24' }}>{h.rate}%</span>
-                </div>
-              )}
-              <div style={{ width: '100%', height: `${barH}px`, background: isHov ? color : `${color}44`, borderRadius: '2px 2px 0 0', transition: 'background 0.1s' }} />
-            </div>
-          );
-        })}
+
+      {/* Hover hit zones */}
+      <div style={{ position: 'absolute', top: 0, left: 32, right: 36, height: H, display: 'flex' }}>
+        {history.map((h, i) => (
+          <div key={i} style={{ flex: 1, height: '100%', cursor: 'crosshair', position: 'relative' }}
+            onMouseEnter={() => setHovered(i)} onMouseLeave={() => setHovered(null)}>
+            {hovered === i && (
+              <div style={{ position: 'absolute', bottom: '105%', left: '50%', transform: 'translateX(-50%)', background: '#002D5B', color: 'white', borderRadius: 7, padding: '6px 9px', fontSize: 10, lineHeight: 1.6, zIndex: 30, pointerEvents: 'none', boxShadow: '0 3px 12px rgba(0,0,0,0.25)', minWidth: 130 }}>
+                <div style={{ fontWeight: 700, borderBottom: '1px solid rgba(255,255,255,0.15)', paddingBottom: 3, marginBottom: 3 }}>{h.label}</div>
+                <div>Subs: <span style={{ color: `${color}ee`, fontWeight: 700 }}>{h.subs.toLocaleString('en-IN')}</span></div>
+                <div>View Rate: <span style={{ color: '#fbbf24', fontWeight: 700 }}>{h.rate}%</span></div>
+                <div>Net Subs: <span style={{ color: h.net >= 0 ? '#4ade80' : '#f87171', fontWeight: 700 }}>{h.net >= 0 ? '+' : ''}{h.net}</span></div>
+                <div>Posts: <span style={{ color: '#94a3b8', fontWeight: 700 }}>{h.posts}</span></div>
+              </div>
+            )}
+            {/* Vertical guide line on hover */}
+            {hovered === i && <div style={{ position: 'absolute', top: 0, left: '50%', width: 1, height: '100%', background: 'rgba(0,0,0,0.1)' }} />}
+          </div>
+        ))}
       </div>
-      {/* Line overlay */}
-      <svg style={{ pointerEvents: 'none', position: 'absolute', top: 0, left: 30, right: 36, width: 'calc(100% - 66px)', height: `${H}px` }} viewBox={`0 0 100 ${H}`} preserveAspectRatio="none">
-        <polyline points={pts.join(' ')} fill="none" stroke={color} strokeWidth="2" vectorEffect="non-scaling-stroke" />
-        {history.map((h, i) => {
-          const [x, y] = pts[i].split(',');
-          return <circle key={i} cx={x} cy={y} r={hovered === i ? '2.5' : '1.8'}
-            fill={hovered === i ? 'white' : color} stroke={color} strokeWidth="1.2" vectorEffect="non-scaling-stroke" />;
-        })}
+
+      {/* SVG: subs line (solid) + rate line (dashed) + dots */}
+      <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ display: 'block', height: H }} preserveAspectRatio="none">
+        {/* Grid lines */}
+        {[0.25, 0.5, 0.75].map(f => <line key={f} x1={0} y1={H * f} x2={W} y2={H * f} stroke="#f3f4f6" strokeWidth="0.5" />)}
+        {/* Subs area fill */}
+        <polyline points={`0,${H} ${subsPts} ${W},${H}`} fill={`${color}18`} stroke="none" />
+        {/* Subs line */}
+        <polyline points={subsPts} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+        {/* Rate line dashed amber */}
+        <polyline points={ratePts} fill="none" stroke="#f59e0b" strokeWidth="1.5" strokeDasharray="3,2" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+        {/* Dots */}
+        {history.map((h, i) => (
+          <g key={i}>
+            <circle cx={sx(i)} cy={syS(h.subs)} r={hovered === i ? '2.8' : '1.8'} fill={hovered === i ? 'white' : color} stroke={color} strokeWidth="1.2" vectorEffect="non-scaling-stroke" />
+            <circle cx={sx(i)} cy={syR(h.rate)} r={hovered === i ? '2.4' : '1.4'} fill={hovered === i ? 'white' : '#f59e0b'} stroke="#f59e0b" strokeWidth="1" vectorEffect="non-scaling-stroke" />
+          </g>
+        ))}
       </svg>
+
       {/* X-axis dates */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 3 }}>
         {history.map((h, i) => (
           <span key={i} style={{ fontSize: '9px', color: hovered === i ? color : '#9ca3af', fontWeight: hovered === i ? 700 : 400, textAlign: 'center', flex: 1 }}>{h.label}</span>
         ))}
+      </div>
+
+      {/* Axis legend — bottom left */}
+      <div style={{ position: 'absolute', bottom: 0, left: 32, display: 'flex', gap: 10, alignItems: 'center' }}>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 8, color: `${color}cc` }}>
+          <span style={{ width: 14, height: 2, background: color, display: 'inline-block', borderRadius: 1 }} />Subs
+        </span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 8, color: '#f59e0b' }}>
+          <span style={{ width: 14, height: 0, borderTop: '1.5px dashed #f59e0b', display: 'inline-block' }} />Rate %
+        </span>
+        <span style={{ fontSize: 8, color: '#9ca3af' }}>X: Date</span>
       </div>
     </div>
   );
@@ -415,7 +438,7 @@ function DrilldownStats({ channel }) {
 
 function ChannelCard({ channel, expanded, onToggle, liveData, selectedDate }) {
   const ds = getDateStats(channel, selectedDate);
-  const history = buildHistory(channel.subs, selectedDate);
+  const history = buildHistory(channel, selectedDate);
   const dateOffset = (() => {
     const anchor = selectedDate ? new Date(selectedDate + 'T12:00:00') : new Date();
     const today = new Date(); today.setHours(12, 0, 0, 0);
@@ -811,7 +834,7 @@ export default function MainDashboard() {
               <p style={{ margin: '0 0 18px 0', fontSize: '12px', color: '#9ca3af' }}>Bars: total daily views · Line: view rate (24h) %</p>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(260px,1fr))', gap: '14px' }}>
                 {sorted.slice(0, 6).map((ch, ci) => {
-                  const history = buildHistory(ch.subs, selectedDate);
+                  const history = buildHistory(ch, selectedDate);
                   const growth = history[history.length - 1].subs - history[0].subs;
                   const growthPct = ((growth / (history[0].subs || 1)) * 100).toFixed(1);
                   const col = TREND_COLORS[ci % TREND_COLORS.length];
