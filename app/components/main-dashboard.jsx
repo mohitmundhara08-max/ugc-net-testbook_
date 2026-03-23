@@ -1,6 +1,38 @@
 'use client';
 import { useState, useEffect } from 'react';
 
+// Maps subject → competitor Telegram usernames (Paper 1 and Management shared across teachers)
+const COMPETITOR_MAP = {
+  'Common':               ['Adda247ugcnet','ntaugcnett','UtkarshUGCNET','apniuniversityofficial','pwugcnet','jrfaddaofficial'],
+  'Paper 1':              ['toshibashukla','GulshanPAPER1','DrLokeshBali','ugcnetpaper1bygauravsir','aditiNETJRF'],
+  'Political Science':    ['thediscoverstudy','BYJUSExamPrepPoliticalscience'],
+  'History':              ['historybysubhanginipriya','history','UgcNetHistoryOfficial'],
+  'Public Administration':['jrfaddapublicadmin'],
+  'Sociology':            ['ugcnetsociologybyjrfadda','antarachakk_9876'],
+  'Education':            ['education_by_drpriyanka'],
+  'Home Science':         ['nta_net_home_science','homescienceprerna'],
+  'Law':                  ['ugcnetlawaspirant','ugc_net_Law_Lecture','masterscave_law','ugcnetlawbydikshasingh'],
+  'English':              ['EnglishWithAKSRajveer','EnglishNETJRF','dana_multitasker','Literature2021','UGCNETEnglishByAyeshaMaam','ugcnetenglishbyaishwaryapuri','ugc_net_english'],
+  'Geography':            ['suraj_Sir_Geo','GEOGRAPHY_UGC_NET_PGT_SET_ADDA','ugc_net_jrf_geography','geography','GEOGRAPHY_UGC_NETJRF','Geographywankit','netxamgeo'],
+  'Economics':            ['ECONOMICSNTANET','ugcneteconomicsbyshivanisharma','ugcneteconomicsnotes','netecon22','UGCPAPER1economics','economics_ugc_net'],
+  'Management':           ['ugc_net_commerce_management','ugc_net_management_commerce','MANAGEMENT_NET_SET_ADDA','SeekStudySmartly3s','mgtbykanupriya','DeepeshManoraniSir_UgcNet'],
+  'Environmental Science':['ugc_Net_evs','ugcnetevsbyanshikapandey','evs_study','EVS_withAdda247'],
+  'Library Science':      ['UGCNETJRF2024JUNE','ugc_net_Library_Science','net_library_science','bsiacademy_lis','lisupdatesforall','UGCNETLibraryScience'],
+  'Computer Science':     ['puneet_computer_science_ugc_net','ugc_net_computerscience','ugcnetcse2023','Computer_science_net_notes'],
+  'Sanskrit':             ['Avdheshvidyalankarah','Sanskrit_By_Sachinsir'],
+  'Hindi':                ['UGC_NET_HINDI_CSIR_GRAMMAR_CUET','padhaaiwal'],
+  'Commerce':             ['commercenetachievers','NetJRFwithAIR1Yukti','ugc_net_commerce_management','ugc_net_management_commerce','ugc_net_commerce_managementt','ugcnetcommercebyadda247','UGC_NET_COMMERCE_CUET'],
+  'Psychology':           ['netwithhafsa','ugcnetpsychologyforall','psychprep','psychohub12345'],
+  'Physical Education':   ['Physical_Education_Adda247','ugc_net_Phsyical_education','RWA_UGC_NET_PHYSICAL_EDUCATION'],
+};
+
+// Returns competitor usernames for a given subject (handles Paper 1 and Management grouping)
+function getCompetitorKey(subject) {
+  if (['Paper 1'].includes(subject)) return 'Paper 1';
+  if (['Management'].includes(subject)) return 'Management';
+  return subject;
+}
+
 const STATIC_CHANNELS = [
   { username: 'testbook_ugcnet', subject: 'Common', name: '@testbook_ugcnet', posts: 12, rate: 8.5, teacher: '', avgViews: 3400, avgFwd: 3.7, joined: 55, left: 36, bestHours: ['3:30pm','6:30pm','7:30pm','8:30pm'], contentTypes: [{type:'Morning Motivation',posts:4,avgViews:5000,rate:5.4,fwd:1.0},{type:'News Bulletin',posts:4,avgViews:2900,rate:3.1,fwd:5.0},{type:'Study Plans',posts:4,avgViews:2300,rate:2.4,fwd:5.0}], topPost: 'Morning motivation featuring a quote by Amartya Sen.' },
   { username: 'pritipaper1', subject: 'Paper 1', name: '@pritipaper1', posts: 11, rate: 8.9, teacher: 'Priti', avgViews: 1900, avgFwd: 2.1, joined: 42, left: 18, bestHours: ['7:00am','12:00pm','6:00pm'], contentTypes: [{type:'PYQ Discussion',posts:4,avgViews:2200,rate:9.8,fwd:3.0},{type:'Concept Notes',posts:4,avgViews:1800,rate:8.5,fwd:2.0},{type:'Mock Test Links',posts:3,avgViews:1500,rate:7.2,fwd:1.5}], topPost: 'Paper 1 PYQ marathon — top 50 questions.' },
@@ -533,6 +565,73 @@ function ChannelCard({ channel, expanded, onToggle, liveData, selectedDate }) {
 
 const TREND_COLORS = ['#2563eb', '#dc2626', '#16a34a', '#d97706', '#7c3aed', '#0891b2', '#db2777'];
 
+function CompetitorCard({ username, info, ownMaxSubs }) {
+  const [expanded, setExpanded] = useState(false);
+  const subs = info?.subscribers ?? 0;
+  const ahead = subs > ownMaxSubs;
+  const gap = subs > 0 && ownMaxSubs > 0
+    ? (ahead ? `▲ +${(subs - ownMaxSubs).toLocaleString('en-IN')} ahead` : `▼ -${(ownMaxSubs - subs).toLocaleString('en-IN')} behind`)
+    : null;
+
+  return (
+    <div style={{ background: 'white', borderRadius: '10px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', borderLeft: `3px solid ${ahead ? '#dc2626' : '#d1fae5'}`, overflow: 'hidden' }}>
+      {/* Header row — always visible */}
+      <div style={{ padding: '10px 14px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+        onClick={() => setExpanded(e => !e)}>
+        <div style={{ minWidth: 0 }}>
+          <p style={{ margin: 0, fontWeight: 600, fontSize: '13px', color: '#002D5B', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{info?.title || username}</p>
+          <a href={`https://t.me/${username}`} target="_blank" rel="noopener noreferrer"
+            style={{ fontSize: '11px', color: '#2563eb', textDecoration: 'none' }}
+            onClick={e => e.stopPropagation()}>@{username} ↗</a>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, marginLeft: 8 }}>
+          <div style={{ textAlign: 'right' }}>
+            <p style={{ margin: 0, fontWeight: 700, fontSize: '14px', color: ahead ? '#dc2626' : '#16a34a' }}>{subs > 0 ? subs.toLocaleString('en-IN') : '—'}</p>
+            {gap && <p style={{ margin: 0, fontSize: '10px', color: ahead ? '#dc2626' : '#16a34a' }}>{gap}</p>}
+          </div>
+          <span style={{ color: '#9ca3af', fontSize: '11px' }}>{expanded ? '▲' : '▼'}</span>
+        </div>
+      </div>
+      {/* Expanded details */}
+      {expanded && (
+        <div style={{ padding: '10px 14px', borderTop: '1px solid #f3f4f6', background: '#f9fafb' }}>
+          {info?.description && (
+            <p style={{ margin: '0 0 8px 0', fontSize: '12px', color: '#6b7280', lineHeight: 1.5 }}>{info.description}</p>
+          )}
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            <span style={{ background: '#f3f4f6', padding: '3px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: 600, color: '#374151' }}>
+              {subs > 0 ? `${subs.toLocaleString('en-IN')} subscribers` : 'No data yet'}
+            </span>
+            {ahead ? (
+              <span style={{ background: '#fee2e2', padding: '3px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: 600, color: '#dc2626' }}>
+                🔴 Ahead by {(subs - ownMaxSubs).toLocaleString('en-IN')}
+              </span>
+            ) : subs > 0 ? (
+              <span style={{ background: '#dcfce7', padding: '3px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: 600, color: '#16a34a' }}>
+                🟢 Behind by {(ownMaxSubs - subs).toLocaleString('en-IN')}
+              </span>
+            ) : null}
+            <a href={`https://t.me/${username}`} target="_blank" rel="noopener noreferrer"
+              style={{ background: '#dbeafe', color: '#1e40af', padding: '3px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: 600, textDecoration: 'none' }}>
+              Open in Telegram ↗
+            </a>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CompetitorList({ usernames, competitorData, ownMaxSubs }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+      {usernames.map(u => (
+        <CompetitorCard key={u} username={u} info={competitorData[u.toLowerCase()]} ownMaxSubs={ownMaxSubs} />
+      ))}
+    </div>
+  );
+}
+
 export default function MainDashboard() {
   const [activeTab, setActiveTab] = useState('analytics');
   const [selectedSubject, setSelectedSubject] = useState('Common');
@@ -542,6 +641,8 @@ export default function MainDashboard() {
   const [lastFetched, setLastFetched] = useState(null);
   const [alerts, setAlerts] = useState([]);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().slice(0, 10));
+  const [competitorData, setCompetitorData] = useState({}); // username → {title, subscribers}
+  const [competitorLoading, setCompetitorLoading] = useState(false);
 
   useEffect(() => {
     fetch('/api/channels').then(r => r.json()).then(data => {
@@ -557,6 +658,24 @@ export default function MainDashboard() {
       }
       setLoading(false);
     }).catch(() => setLoading(false));
+  }, []);
+
+  // Fetch all unique competitor usernames once on mount
+  useEffect(() => {
+    const allUsernames = [...new Set(Object.values(COMPETITOR_MAP).flat())];
+    if (!allUsernames.length) return;
+    setCompetitorLoading(true);
+    fetch(`/api/channels?type=competitors&usernames=${allUsernames.join(',')}`)
+      .then(r => r.json())
+      .then(data => {
+        if (data.success) {
+          const map = {};
+          data.channels.forEach(ch => { map[ch.username.toLowerCase()] = ch; });
+          setCompetitorData(map);
+        }
+        setCompetitorLoading(false);
+      })
+      .catch(() => setCompetitorLoading(false));
   }, []);
 
   const channels = STATIC_CHANNELS.map(sc => {
@@ -683,16 +802,36 @@ export default function MainDashboard() {
                   ))}
                 </div>
               </div>
-              <div style={{ position: 'sticky', top: '16px' }}>
+              <div style={{ position: 'sticky', top: '16px', minWidth: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px', paddingBottom: '10px', borderBottom: '2px solid #dc2626' }}>
                   <span style={{ width: '12px', height: '12px', background: '#dc2626', borderRadius: '50%' }} />
-                  <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700, color: '#002D5B' }}>Competitors</h3>
+                  <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700, color: '#002D5B' }}>Competitors — {selectedSubject}</h3>
                 </div>
-                <div style={{ background: '#fef3c7', padding: '32px 20px', borderRadius: '12px', border: '1px dashed #f59e0b', textAlign: 'center' }}>
-                  <p style={{ margin: '0 0 6px 0', fontSize: '28px' }}>⏳</p>
-                  <p style={{ margin: '0 0 6px 0', color: '#92400e', fontWeight: 700, fontSize: '14px' }}>No competitors added yet</p>
-                  <p style={{ margin: 0, color: '#b45309', fontSize: '12px', lineHeight: '1.6' }}>Share competitor channel @usernames to start benchmarking side-by-side</p>
-                </div>
+                {(() => {
+                  const key = getCompetitorKey(selectedSubject);
+                  const usernames = COMPETITOR_MAP[key] || [];
+                  if (!usernames.length) return (
+                    <div style={{ background: '#f9fafb', padding: '24px', borderRadius: '12px', textAlign: 'center', color: '#9ca3af', fontSize: '13px' }}>
+                      No competitors mapped for this subject yet.
+                    </div>
+                  );
+                  if (competitorLoading) return (
+                    <div style={{ background: '#f9fafb', padding: '24px', borderRadius: '12px', textAlign: 'center', color: '#6b7280', fontSize: '13px' }}>
+                      🔄 Fetching live competitor data...
+                    </div>
+                  );
+                  const ownChs = filtered;
+                  const ownMaxSubs = Math.max(...ownChs.map(c => c.subs), 1);
+                  // Sort competitors by subs desc
+                  const sorted = [...usernames].sort((a, b) => {
+                    const sa = competitorData[a.toLowerCase()]?.subscribers ?? 0;
+                    const sb = competitorData[b.toLowerCase()]?.subscribers ?? 0;
+                    return sb - sa;
+                  });
+                  return (
+                    <CompetitorList usernames={sorted} competitorData={competitorData} ownMaxSubs={ownMaxSubs} />
+                  );
+                })()}
               </div>
             </div>
           </div>
@@ -865,12 +1004,53 @@ export default function MainDashboard() {
               </div>
             </div>
             <div>
-              <h3 style={{ margin: '0 0 4px 0', fontSize: '17px', fontWeight: 700, color: '#002D5B' }}>📊 Competitors — View Rate (24h) & Total Views — Last 7 Days</h3>
-              <p style={{ margin: '0 0 16px 0', fontSize: '12px', color: '#9ca3af' }}>Bars: total daily views · Line: view rate (24h) %</p>
-              <div style={{ background: '#fef3c7', padding: '40px', borderRadius: '12px', border: '1px dashed #f59e0b', textAlign: 'center' }}>
-                <p style={{ margin: '0 0 4px 0', fontSize: '22px' }}>⏳</p>
-                <p style={{ margin: 0, color: '#92400e', fontWeight: 600 }}>No competitor channels added — share @usernames to unlock</p>
-              </div>
+              <h3 style={{ margin: '0 0 4px 0', fontSize: '17px', fontWeight: 700, color: '#002D5B' }}>📊 Competitors — Live Subscriber Benchmarks</h3>
+              <p style={{ margin: '0 0 16px 0', fontSize: '12px', color: '#9ca3af' }}>All subjects · Live subscriber counts · Blue = OWN, Red left border = competitor ahead</p>
+              {competitorLoading ? (
+                <div style={{ background: 'white', padding: '40px', borderRadius: '12px', textAlign: 'center', color: '#6b7280' }}>🔄 Fetching live competitor data from Telegram…</div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                  {Object.entries(COMPETITOR_MAP).map(([subjectKey, usernames]) => {
+                    const ownChs = channels.filter(c => getCompetitorKey(c.subject) === subjectKey);
+                    if (!ownChs.length) return null;
+                    const ownMaxSubs = Math.max(...ownChs.map(c => c.subs), 1);
+                    const compRows = usernames.map(u => {
+                      const info = competitorData[u.toLowerCase()];
+                      return { username: u, title: info?.title || u, subs: info?.subscribers ?? 0 };
+                    }).sort((a, b) => b.subs - a.subs);
+                    const allRows = [
+                      ...ownChs.map(c => ({ username: c.username, title: c.title || c.subject, subs: c.subs, isOwn: true })),
+                      ...compRows.map(c => ({ ...c, isOwn: false })),
+                    ].sort((a, b) => b.subs - a.subs);
+                    return (
+                      <div key={subjectKey} style={{ background: 'white', borderRadius: '12px', padding: '16px 18px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+                        <h4 style={{ margin: '0 0 12px 0', fontSize: '14px', fontWeight: 700, color: '#002D5B', borderBottom: '1px solid #f3f4f6', paddingBottom: 8 }}>{subjectKey}</h4>
+                        {allRows.map((row, i) => {
+                          const pct = ownMaxSubs > 0 ? (row.subs / Math.max(...allRows.map(r => r.subs), 1)) * 100 : 0;
+                          return (
+                            <div key={row.username} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 0', borderBottom: i < allRows.length - 1 ? '1px solid #f9fafb' : 'none' }}>
+                              <span style={{ fontSize: 11, color: '#9ca3af', minWidth: 18 }}>#{i + 1}</span>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 }}>
+                                  <span style={{ fontSize: 12, fontWeight: row.isOwn ? 700 : 500, color: row.isOwn ? '#1e40af' : '#374151', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {row.title}{row.isOwn && <span style={{ background: '#dbeafe', color: '#1e40af', fontSize: 9, padding: '1px 5px', borderRadius: 8, marginLeft: 5 }}>OWN</span>}
+                                  </span>
+                                  <span style={{ fontSize: 12, fontWeight: 700, color: row.isOwn ? '#1e40af' : (row.subs > ownMaxSubs ? '#dc2626' : '#374151'), flexShrink: 0, marginLeft: 8 }}>
+                                    {row.subs > 0 ? row.subs.toLocaleString('en-IN') : '—'}
+                                  </span>
+                                </div>
+                                <div style={{ background: '#f3f4f6', borderRadius: 3, height: 4, overflow: 'hidden' }}>
+                                  <div style={{ height: '100%', width: `${pct}%`, background: row.isOwn ? '#2563eb' : (row.subs > ownMaxSubs ? '#dc2626' : '#9ca3af'), borderRadius: 3 }} />
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
         )}
