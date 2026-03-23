@@ -85,7 +85,7 @@ function MiniBar({ value, max, color }) {
 }
 
 function MiniDualChart({ history, color }) {
-  const [hovered, setHovered] = React.useState(null);
+  const [hovered, setHovered] = useState(null);
   const maxSubs  = Math.max(...history.map(h => h.subs));
   const minSubs  = Math.min(...history.map(h => h.subs));
   const maxRate  = Math.max(...history.map(h => h.rate));
@@ -104,12 +104,6 @@ function MiniDualChart({ history, color }) {
   });
   return (
     <div style={{ position: 'relative', paddingLeft: 30, paddingRight: 36, paddingBottom: 18 }}>
-      {/* Hover tooltip */}
-      {hovered !== null && (
-        <div style={{ position: 'absolute', top: -36, left: '50%', transform: 'translateX(-50%)', background: '#002D5B', color: 'white', borderRadius: 8, padding: '5px 10px', fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap', zIndex: 10, pointerEvents: 'none' }}>
-          {history[hovered]?.label} · {history[hovered]?.subs.toLocaleString('en-IN')} subs · {history[hovered]?.rate}% rate
-        </div>
-      )}
       {/* Left Y-axis: rate % */}
       <div style={{ position: 'absolute', left: 0, top: 0, height: H, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', width: 28 }}>
         <span style={{ fontSize: 8, color: color, textAlign: 'right', display: 'block' }}>{rateTicks[2]}%</span>
@@ -122,30 +116,39 @@ function MiniDualChart({ history, color }) {
         <span style={{ fontSize: 8, color: `${color}99`, textAlign: 'left', display: 'block' }}>{subsTicks[1]}</span>
         <span style={{ fontSize: 8, color: `${color}99`, textAlign: 'left', display: 'block' }}>{subsTicks[0]}</span>
       </div>
-      {/* Bars = subscriber count */}
+      {/* Bars with tooltip above each */}
       <div style={{ display: 'flex', alignItems: 'flex-end', gap: '2px', height: `${H}px` }}>
-        {history.map((h, i) => (
-          <div key={i} style={{ flex: 1, height: '100%', display: 'flex', alignItems: 'flex-end', cursor: 'pointer' }}
-            onMouseEnter={() => setHovered(i)} onMouseLeave={() => setHovered(null)}>
-            <div style={{ width: '100%', height: `${Math.max(4, ((h.subs - minSubs) / (maxSubs - minSubs || 1)) * H * 0.75 + 4)}px`,
-              background: hovered === i ? color : `${color}44`, borderRadius: '2px 2px 0 0', transition: 'background 0.1s' }} />
-          </div>
-        ))}
+        {history.map((h, i) => {
+          const barH = Math.max(4, ((h.subs - minSubs) / (maxSubs - minSubs || 1)) * H * 0.75 + 4);
+          const isHov = hovered === i;
+          return (
+            <div key={i} style={{ flex: 1, height: '100%', display: 'flex', alignItems: 'flex-end', position: 'relative', cursor: 'crosshair' }}
+              onMouseEnter={() => setHovered(i)} onMouseLeave={() => setHovered(null)}>
+              {isHov && (
+                <div style={{ position: 'absolute', bottom: barH + 6, left: '50%', transform: 'translateX(-50%)', background: '#002D5B', color: 'white', borderRadius: 6, padding: '4px 8px', fontSize: 10, fontWeight: 600, whiteSpace: 'nowrap', zIndex: 20, pointerEvents: 'none', boxShadow: '0 2px 8px rgba(0,0,0,0.2)' }}>
+                  {h.label}<br/>
+                  <span style={{ color: `${color}dd` }}>{h.subs > 0 ? h.subs.toLocaleString('en-IN') + ' subs' : '—'}</span>
+                  {' · '}<span style={{ color: '#fbbf24' }}>{h.rate}%</span>
+                </div>
+              )}
+              <div style={{ width: '100%', height: `${barH}px`, background: isHov ? color : `${color}44`, borderRadius: '2px 2px 0 0', transition: 'background 0.1s' }} />
+            </div>
+          );
+        })}
       </div>
-      {/* Line overlay = rate */}
-      <svg style={{ position: 'absolute', top: 0, left: 30, right: 36, width: 'calc(100% - 66px)', height: `${H}px` }} viewBox={`0 0 100 ${H}`} preserveAspectRatio="none">
+      {/* Line overlay */}
+      <svg style={{ pointerEvents: 'none', position: 'absolute', top: 0, left: 30, right: 36, width: 'calc(100% - 66px)', height: `${H}px` }} viewBox={`0 0 100 ${H}`} preserveAspectRatio="none">
         <polyline points={pts.join(' ')} fill="none" stroke={color} strokeWidth="2" vectorEffect="non-scaling-stroke" />
         {history.map((h, i) => {
           const [x, y] = pts[i].split(',');
-          return <circle key={i} cx={x} cy={y} r="1.8" fill={hovered === i ? 'white' : color}
-            stroke={color} strokeWidth="1" vectorEffect="non-scaling-stroke" />;
+          return <circle key={i} cx={x} cy={y} r={hovered === i ? '2.5' : '1.8'}
+            fill={hovered === i ? 'white' : color} stroke={color} strokeWidth="1.2" vectorEffect="non-scaling-stroke" />;
         })}
       </svg>
       {/* X-axis dates */}
       <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
         {history.map((h, i) => (
-          <span key={i} style={{ fontSize: '9px', color: hovered === i ? color : '#9ca3af', fontWeight: hovered === i ? 700 : 400, textAlign: 'center', flex: 1, cursor: 'pointer' }}
-            onMouseEnter={() => setHovered(i)} onMouseLeave={() => setHovered(null)}>{h.label}</span>
+          <span key={i} style={{ fontSize: '9px', color: hovered === i ? color : '#9ca3af', fontWeight: hovered === i ? 700 : 400, textAlign: 'center', flex: 1 }}>{h.label}</span>
         ))}
       </div>
     </div>
