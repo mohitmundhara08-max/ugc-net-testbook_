@@ -51,6 +51,7 @@ function getDateStats(base, anchorDateKey) {
     left: Math.max(1, Math.round(base.left * (0.7 + (seed % 4) * 0.1))),
     avgViews: Math.round(base.avgViews * (0.88 + (seed % 6) * 0.04)),
     rate: parseFloat((base.rate * (0.9 + (seed % 5) * 0.04)).toFixed(1)),
+    posts: Math.max(1, Math.round(base.posts * (0.75 + (seed % 5) * 0.1))),
   };
 }
 
@@ -143,11 +144,11 @@ function MiniDualChart({ history, color }) {
 
 // ─── DrilldownStats — Telegram-style charts with independent date sliders ──
 function DrilldownStats({ channel }) {
-  const [followerDays, setFollowerDays] = useState(30);
-  const [vsDays, setVsDays]             = useState(30);
-  const [srcDays, setSrcDays]           = useState(30);
-  const [subSrcDays, setSubSrcDays]     = useState(30);
-  const [rxDays, setRxDays]             = useState(30);
+  const [followerWeek, setFollowerWeek] = useState(0);
+  const [vsWeek,       setVsWeek]       = useState(0);
+  const [srcWeek,      setSrcWeek]      = useState(0);
+  const [subSrcWeek,   setSubSrcWeek]   = useState(0);
+  const [rxWeek,       setRxWeek]       = useState(0);
   const [weekTab, setWeekTab]           = useState(0);
 
   const [fSeries,      setFS]     = useState({ joined: true, left: true });
@@ -167,30 +168,30 @@ function DrilldownStats({ channel }) {
   const avgViews = channel.avgViews || Math.round(liveSubs * 0.08);
   const avgFwd   = channel.avgFwd   || Math.max(1, parseFloat((liveSubs * 0.0015).toFixed(1)));
   const seed = channel.username.length * 7 + liveSubs;
-  const rng = (i, scale = 1) => scale * (0.65 + 0.7 * Math.abs(Math.sin(seed * 0.31 + i * 1.73)));
+  const rng = (i, scale = 1, weekOffset = 0) => scale * (0.65 + 0.7 * Math.abs(Math.sin(seed * 0.31 + (i + weekOffset * 7) * 1.73)));
 
-  const genDays = N => Array.from({ length: N }, (_, i) => ({
-    joined: Math.max(0, Math.round(channel.joined * 0.15 * rng(i + 10))),
-    left:   Math.max(0, Math.round(channel.left   * 0.10 * rng(i + 20))),
+  const genDays = (weekOffset) => Array.from({ length: 7 }, (_, i) => ({
+    joined: Math.max(0, Math.round(channel.joined * 0.15 * rng(i + 10, 1, weekOffset))),
+    left:   Math.max(0, Math.round(channel.left   * 0.10 * rng(i + 20, 1, weekOffset))),
   }));
-  const genVS = N => Array.from({ length: N }, (_, i) => ({
-    views:  Math.round(avgViews * (0.6 + 0.8 * rng(i + 5))),
-    shares: Math.max(1, Math.round(avgFwd * (0.5 + rng(i + 6, 1.4)))),
+  const genVS = (weekOffset) => Array.from({ length: 7 }, (_, i) => ({
+    views:  Math.round(avgViews * (0.6 + 0.8 * rng(i + 5, 1, weekOffset))),
+    shares: Math.max(1, Math.round(avgFwd * (0.5 + rng(i + 6, 1.4, weekOffset)))),
   }));
-  const genSrc = N => Array.from({ length: N }, (_, i) => {
-    const base = Math.round(avgViews * (0.6 + 0.8 * rng(i + 7)));
+  const genSrc = (weekOffset) => Array.from({ length: 7 }, (_, i) => {
+    const base = Math.round(avgViews * (0.6 + 0.8 * rng(i + 7, 1, weekOffset)));
     return { followers: Math.round(base * 0.72), channels: Math.round(base * 0.10), groups: Math.round(base * 0.08), search: Math.round(base * 0.04), url: Math.round(base * 0.02), other: Math.round(base * 0.03), pm: Math.round(base * 0.01) };
   });
-  const genSubSrc = N => Array.from({ length: N }, (_, i) => ({
-    channels: Math.max(0, Math.round(rng(i + 8,  Math.max(1, liveSubs * 0.00025)))),
-    search:   Math.max(0, Math.round(rng(i + 9,  Math.max(1, liveSubs * 0.00015)))),
-    url:      Math.max(0, Math.round(rng(i + 11, Math.max(1, liveSubs * 0.0001)))),
-    groups:   Math.max(0, Math.round(rng(i + 12, Math.max(1, liveSubs * 0.00008)))),
+  const genSubSrc = (weekOffset) => Array.from({ length: 7 }, (_, i) => ({
+    channels: Math.max(0, Math.round(rng(i + 8,  Math.max(1, liveSubs * 0.00025), weekOffset))),
+    search:   Math.max(0, Math.round(rng(i + 9,  Math.max(1, liveSubs * 0.00015), weekOffset))),
+    url:      Math.max(0, Math.round(rng(i + 11, Math.max(1, liveSubs * 0.0001),  weekOffset))),
+    groups:   Math.max(0, Math.round(rng(i + 12, Math.max(1, liveSubs * 0.00008), weekOffset))),
   }));
-  const genRx = N => Array.from({ length: N }, (_, i) => ({
-    positive: Math.max(0, Math.round(liveSubs * 0.0003  * rng(i + 30))),
-    other:    Math.max(0, Math.round(liveSubs * 0.0001  * rng(i + 31))),
-    negative: Math.max(0, Math.round(liveSubs * 0.00003 * rng(i + 32))),
+  const genRx = (weekOffset) => Array.from({ length: 7 }, (_, i) => ({
+    positive: Math.max(0, Math.round(liveSubs * 0.0003  * rng(i + 30, 1, weekOffset))),
+    other:    Math.max(0, Math.round(liveSubs * 0.0001  * rng(i + 31, 1, weekOffset))),
+    negative: Math.max(0, Math.round(liveSubs * 0.00003 * rng(i + 32, 1, weekOffset))),
   }));
   const hourBases = [0,0,0,35,25,50,110,170,250,320,400,380,340,280,240,300,280,250,175,145,110,90,75,55];
   const hourScale = avgViews / 3000;
@@ -287,21 +288,26 @@ function DrilldownStats({ channel }) {
     );
   }
 
-  function Slider({ value, onChange }) {
-    const steps = [7, 14, 30, 60, 90];
-    const idx = steps.indexOf(value) === -1 ? 2 : steps.indexOf(value);
+  function WeekPicker({ value, onChange }) {
+    // Generate 13 weeks going back from today (0 = most recent week)
+    const weeks = Array.from({ length: 13 }, (_, i) => {
+      const end = new Date();
+      end.setDate(end.getDate() - i * 7);
+      const start = new Date(end);
+      start.setDate(start.getDate() - 6);
+      const fmt = d => d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+      return { label: `${fmt(start)}–${fmt(end)}`, idx: i };
+    });
     return (
       <div style={{ marginBottom: 10 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-          <span style={{ fontSize: 10, color: '#6b7280', fontWeight: 600 }}>Range</span>
-          <span style={{ fontSize: 11, color: '#2563eb', fontWeight: 700 }}>{value} days</span>
-        </div>
-        <input type="range" min={0} max={steps.length - 1} step={1} value={idx}
-          onChange={e => onChange(steps[Number(e.target.value)])}
-          style={{ width: '100%', accentColor: '#2563eb', cursor: 'pointer', height: 3 }} />
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
-          {steps.map((s, i) => (
-            <span key={s} onClick={() => onChange(s)} style={{ fontSize: 9, color: i === idx ? '#2563eb' : '#9ca3af', fontWeight: i === idx ? 700 : 400, cursor: 'pointer' }}>{s}d</span>
+        <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 4, scrollbarWidth: 'none' }}>
+          {weeks.map(w => (
+            <button key={w.idx} onClick={() => onChange(w.idx)}
+              style={{ flexShrink: 0, padding: '4px 10px', borderRadius: 20, border: 'none', cursor: 'pointer', fontSize: 10, fontWeight: 600, whiteSpace: 'nowrap',
+                background: value === w.idx ? '#2563eb' : '#f3f4f6',
+                color: value === w.idx ? '#fff' : '#374151' }}>
+              {value === w.idx && '✓ '}{w.label}
+            </button>
           ))}
         </div>
       </div>
@@ -330,8 +336,8 @@ function DrilldownStats({ channel }) {
 
       <div style={cardStyle}>
         <SL text="FOLLOWERS JOINED / LEFT" />
-        <Slider value={followerDays} onChange={setFollowerDays} />
-        <LineChart data={genDays(followerDays)} keys={activeFKeys} colors={activeFColors} />
+        <WeekPicker value={followerWeek} onChange={setFollowerWeek} />
+        <LineChart data={genDays(followerWeek)} keys={activeFKeys} colors={activeFColors} />
         <div style={{ marginTop: 7 }}>
           <TPill color="#16a34a" label="Joined" active={fSeries.joined} onClick={() => toggle(setFS, 'joined')} />
           <TPill color="#dc2626" label="Left"   active={fSeries.left}   onClick={() => toggle(setFS, 'left')} />
@@ -340,8 +346,8 @@ function DrilldownStats({ channel }) {
 
       <div style={cardStyle}>
         <SL text="VIEWS & SHARES" />
-        <Slider value={vsDays} onChange={setVsDays} />
-        <DualLineChart data={genVS(vsDays)} />
+        <WeekPicker value={vsWeek} onChange={setVsWeek} />
+        <DualLineChart data={genVS(vsWeek)} />
         <p style={{ margin: '3px 0 7px', fontSize: 9, color: '#9ca3af' }}>Views & Shares use independent Y-axes</p>
         <TPill color="#2563eb" label="Views"  active={vsSeries.views}  onClick={() => toggle(setVS, 'views')} />
         <TPill color="#f59e0b" label="Shares" active={vsSeries.shares} onClick={() => toggle(setVS, 'shares')} />
@@ -349,8 +355,8 @@ function DrilldownStats({ channel }) {
 
       <div style={cardStyle}>
         <SL text="VIEWS BY SOURCE" />
-        <Slider value={srcDays} onChange={setSrcDays} />
-        <BarChart data={genSrc(srcDays)} keys={activeSrc.map(e => e.k)} colors={activeSrc.map(e => e.c)} />
+        <WeekPicker value={srcWeek} onChange={setSrcWeek} />
+        <BarChart data={genSrc(srcWeek)} keys={activeSrc.map(e => e.k)} colors={activeSrc.map(e => e.c)} />
         <div style={{ marginTop: 7 }}>
           {srcKeys.map((k,i) => <TPill key={k} color={srcColors[i]} label={srcLabels[i]} active={srcSeries[k]} onClick={() => toggle(setSrc, k)} />)}
         </div>
@@ -358,8 +364,8 @@ function DrilldownStats({ channel }) {
 
       <div style={cardStyle}>
         <SL text="NEW SUBSCRIBERS BY SOURCE" />
-        <Slider value={subSrcDays} onChange={setSubSrcDays} />
-        <BarChart data={genSubSrc(subSrcDays)} keys={activeSubSrc.map(e => e.k)} colors={activeSubSrc.map(e => e.c)} H={60} />
+        <WeekPicker value={subSrcWeek} onChange={setSubSrcWeek} />
+        <BarChart data={genSubSrc(subSrcWeek)} keys={activeSubSrc.map(e => e.k)} colors={activeSubSrc.map(e => e.c)} H={60} />
         <div style={{ marginTop: 7 }}>
           {subSrcKeys.map((k,i) => <TPill key={k} color={subSrcColors[i]} label={subSrcLbls[i]} active={subSrcSeries[k]} onClick={() => toggle(setSubSrc, k)} />)}
         </div>
@@ -382,8 +388,8 @@ function DrilldownStats({ channel }) {
 
       <div style={cardStyle}>
         <SL text="REACTIONS" />
-        <Slider value={rxDays} onChange={setRxDays} />
-        <BarChart data={genRx(rxDays)} keys={activeRxKeys} colors={activeRxColors} H={60} />
+        <WeekPicker value={rxWeek} onChange={setRxWeek} />
+        <BarChart data={genRx(rxWeek)} keys={activeRxKeys} colors={activeRxColors} H={60} />
         <div style={{ marginTop: 7 }}>
           <TPill color="#16a34a" label="Positive" active={rxSeries.positive} onClick={() => toggle(setRX, 'positive')} />
           <TPill color="#f59e0b" label="Other"    active={rxSeries.other}    onClick={() => toggle(setRX, 'other')} />
@@ -412,7 +418,7 @@ function ChannelCard({ channel, expanded, onToggle, liveData, selectedDate }) {
                 </a>
               </span>
               <span style={{ background: '#dbeafe', color: '#1e40af', padding: '1px 7px', borderRadius: '20px', fontSize: '10px', fontWeight: 600 }}>Own</span>
-              <span style={{ fontSize: '11px', color: '#6b7280' }}>{channel.subs.toLocaleString('en-IN')} subs · {channel.posts} posts</span>
+              <span style={{ fontSize: '11px', color: '#6b7280' }}>{channel.subs.toLocaleString('en-IN')} subs · {ds.posts} posts</span>
             </div>
           </div>
           <span style={{ color: '#9ca3af', fontSize: '11px', whiteSpace: 'nowrap', marginLeft: '8px' }}>{expanded ? '▲' : 'expand ▶'}</span>
