@@ -565,39 +565,16 @@ export default function MainDashboard() {
     </div>
   );
 
-  const DateBar = () => {
-    const idx = dateButtons.findIndex(d => d.key === selectedDate);
-    const activeIdx = idx === -1 ? 0 : idx;
-    return (
-      <div style={{ marginBottom: '24px', background: 'white', borderRadius: '14px', padding: '16px 20px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-          <span style={{ fontSize: '11px', color: '#9ca3af', fontWeight: 600, letterSpacing: '0.05em' }}>DATE RANGE</span>
-          <span style={{ fontSize: '13px', fontWeight: 700, color: '#6d28d9' }}>
-            {dateButtons[activeIdx]?.label}
-            {activeIdx === 0 && <span style={{ background: '#ede9fe', color: '#6d28d9', fontSize: '10px', fontWeight: 600, padding: '1px 7px', borderRadius: '20px', marginLeft: '8px' }}>Today</span>}
-          </span>
-        </div>
-        <div style={{ position: 'relative', padding: '8px 0' }}>
-          <input
-            type="range"
-            min={0}
-            max={dateButtons.length - 1}
-            value={activeIdx}
-            onChange={e => setSelectedDate(dateButtons[Number(e.target.value)].key)}
-            style={{ width: '100%', accentColor: '#6d28d9', cursor: 'pointer', height: '4px' }}
-          />
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '8px' }}>
-            {dateButtons.map((d, i) => (
-              <button key={d.key} onClick={() => setSelectedDate(d.key)}
-                style={{ fontSize: '10px', color: i === activeIdx ? '#6d28d9' : '#9ca3af', fontWeight: i === activeIdx ? 700 : 400, background: 'none', border: 'none', cursor: 'pointer', padding: '0', textAlign: 'center' }}>
-                {d.label.split(' ').slice(0, 2).join(' ')}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-    );
-  };
+  const DateBar = () => (
+    <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', marginBottom: '24px', paddingBottom: '4px', scrollbarWidth: 'none' }}>
+      {dateButtons.map((d, i) => (
+        <button key={d.key} onClick={() => setSelectedDate(d.key)}
+          style={{ padding: '8px 18px', borderRadius: '20px', border: 'none', background: selectedDate === d.key ? '#6d28d9' : '#f3f4f6', color: selectedDate === d.key ? 'white' : '#374151', cursor: 'pointer', whiteSpace: 'nowrap', fontWeight: 600, fontSize: '13px', flexShrink: 0 }}>
+          {selectedDate === d.key && '✓ '}{d.label}
+        </button>
+      ))}
+    </div>
+  );
 
   return (
     <div style={{ minHeight: '100vh', background: '#f9fafb' }}>
