@@ -64,6 +64,51 @@ async function fetchBatch(usernames) {
   return results;
 }
 
+export async function POST(request) {
+  try {
+    const body = await request.json();
+    const { subject, channelSummary, compDetails, selectedDate } = body;
+
+    const prompt = `You are a senior growth strategist for a leading EdTech company in India. Analyze this UGC NET Telegram channel data for "${subject}" and generate actionable intelligence.
+
+TODAY: ${selectedDate}
+
+OWN CHANNELS:
+${JSON.stringify(channelSummary, null, 2)}
+
+TOP COMPETITORS (live subscriber counts):
+${compDetails?.length ? JSON.stringify(compDetails, null, 2) : 'No competitor data available.'}
+
+Respond with ONLY a JSON object (no markdown, no preamble):
+{"healthInsights":[{"channel":"name","signal":"2-4 words","observed":"one sentence with numbers","hypothesis":"one sentence root cause","action":"one specific action today","severity":"high"}],"keyInsight":"one paragraph with specific numbers and competitor comparison","contentIdeas":[{"type":"quiz","title":"specific title","description":"two sentences","tags":["tag1","tag2"],"competitorEvidence":"one sentence","priority":"high","effort":"quick (<2 hr)"}],"quickWins":[{"title":"action title","description":"two sentences","inspiredBy":"data signal","priority":"high","effort":"quick (<2 hr)"}]}
+
+Rules: healthInsights 2-4 items. contentIdeas 2-3 items. quickWins 2-3 items. type must be one of: quiz, video, pdf, text. severity: high/medium/low. priority: high/medium. effort exactly: "quick (<2 hr)" or "moderate (half day)" or "large (1-2 days)".`;
+
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': process.env.ANTHROPIC_API_KEY || '',
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1500,
+        messages: [{ role: 'user', content: prompt }],
+      }),
+    });
+
+    const data = await res.json();
+    if (!res.ok) return Response.json({ success: false, error: data?.error?.message || 'Claude API error' }, { status: 500 });
+
+    const text = data.content?.find(b => b.type === 'text')?.text || '';
+    const clean = text.replace(/```json|```/g, '').trim();
+    const parsed = JSON.parse(clean);
+    return Response.json({ success: true, insights: parsed });
+  } catch (err) {
+    return Response.json({ success: false, error: err.message || 'Server error' }, { status: 500 });
+  }
+}
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const type = searchParams.get('type');
