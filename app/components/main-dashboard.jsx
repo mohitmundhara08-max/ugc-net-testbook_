@@ -366,6 +366,7 @@ function ChannelsSection({ channels, selectedDate, onDateChange }) {
                     <MiniDualChart history={history} color={healthColor} />
                   </div>
                   {/* Content types table */}
+                  {ch.contentTypes?.length > 0 && (
                   <div style={{ marginBottom: 14 }}>
                     <div style={{ fontSize: 10, fontWeight: 700, color: '#64748b', letterSpacing: '0.05em', marginBottom: 8 }}>CONTENT BREAKDOWN</div>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
@@ -375,7 +376,12 @@ function ChannelsSection({ channels, selectedDate, onDateChange }) {
                       <tbody>
                         {ch.contentTypes.map((ct, i) => (
                           <tr key={i} style={{ borderBottom: i < ch.contentTypes.length - 1 ? '1px solid #f1f5f9' : 'none' }}>
-                            <td style={{ padding: '6px 10px', fontWeight: 500, color: '#374151' }}>{ct.type}</td>
+                            <td style={{ padding: '6px 10px', fontWeight: 500, color: '#374151' }}>
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                                <span style={{ fontSize: 12 }}>{typeEmoji(ct.type)}</span>
+                                {displayType(ct.type)}
+                              </span>
+                            </td>
                             <td style={{ padding: '6px 10px', textAlign: 'right', color: '#374151' }}>{ct.posts}</td>
                             <td style={{ padding: '6px 10px', textAlign: 'right' }}>{ct.avgViews >= 1000 ? `${(ct.avgViews/1000).toFixed(1)}K` : ct.avgViews}</td>
                             <td style={{ padding: '6px 10px', textAlign: 'right' }}><span style={{ fontWeight: 700, color: ct.rate > 8 ? '#10b981' : ct.rate > 5 ? '#3b82f6' : '#f59e0b' }}>{ct.rate}%</span></td>
@@ -385,6 +391,7 @@ function ChannelsSection({ channels, selectedDate, onDateChange }) {
                       </tbody>
                     </table>
                   </div>
+                  )}
                   {/* Best hours */}
                   {ch.bestHours?.length > 0 && (
                     <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -614,104 +621,286 @@ function InsightsSection({ channels, competitorData, selectedDate }) {
   );
 }
 
+// ─── Content type display helpers ────────────────────────────────────────────
+const TYPE_LABEL = {
+  'Quiz / Poll':        'MCQ',
+  'MCQ':                'MCQ',
+  'YouTube Class Link': 'YouTube Class',
+  'PDF Notes':          'PDF Notes',
+  'Voice Note Class':   'Voice Note',
+  'PYQ Discussion':     'PYQ Discussion',
+  'Current Affairs':    'Current Affairs',
+  'Promotional Post':   'Promotional',
+};
+const TYPE_COLOR = {
+  'MCQ':             '#3b82f6',
+  'YouTube Class':   '#dc2626',
+  'PDF Notes':       '#10b981',
+  'Voice Note':      '#8b5cf6',
+  'PYQ Discussion':  '#f59e0b',
+  'Current Affairs': '#06b6d4',
+  'Promotional':     '#64748b',
+};
+const TYPE_EMOJI = {
+  'MCQ':             '🧪',
+  'YouTube Class':   '▶️',
+  'PDF Notes':       '📄',
+  'Voice Note':      '🎙️',
+  'PYQ Discussion':  '📝',
+  'Current Affairs': '📰',
+  'Promotional':     '📢',
+};
+function displayType(raw) { return TYPE_LABEL[raw] || raw; }
+function typeColor(raw)   { return TYPE_COLOR[displayType(raw)] || '#64748b'; }
+function typeEmoji(raw)   { return TYPE_EMOJI[displayType(raw)] || '📌'; }
+
 // ─── CONTENT CALENDAR SECTION ─────────────────────────────────────────────────
 function CalendarSection({ channels }) {
   const today = new Date();
-  const [year, setYear]   = useState(today.getFullYear());
-  const [month, setMonth] = useState(today.getMonth());
-  const [events, setEvents] = useState({});
-  const [modal, setModal] = useState(null); // { date }
-  const [form, setForm] = useState({ type: 'Quiz / Poll', channel: channels[0]?.username || '', note: '' });
+  const todayKey = today.toISOString().slice(0, 10);
 
-  const monthName = new Date(year, month).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
-  const firstDay  = new Date(year, month, 1).getDay();
+  // Channel planner state
+  const [selChannel, setSelChannel] = useState(channels[0]?.username || '');
+  const [planDate,   setPlanDate]   = useState(todayKey);
+  const [plan,       setPlan]       = useState([]); // array of post objects
+  const [generating, setGenerating] = useState(false);
+  const [genError,   setGenError]   = useState(null);
+  const [postingId,  setPostingId]  = useState(null);
+
+  // Mini calendar state
+  const [year,  setYear]  = useState(today.getFullYear());
+  const [month, setMonth] = useState(today.getMonth());
+  const [calEvents, setCalEvents] = useState({});
+
+  const monthName   = new Date(year, month).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+  const firstDay    = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const prev = () => { if (month === 0) { setMonth(11); setYear(y => y - 1); } else setMonth(m => m - 1); };
   const next = () => { if (month === 11) { setMonth(0); setYear(y => y + 1); } else setMonth(m => m + 1); };
 
-  const typeColors = { 'Quiz / Poll': '#3b82f6', 'YouTube Class Link': '#dc2626', 'PDF Notes': '#10b981', 'Voice Note Class': '#8b5cf6', 'PYQ Discussion': '#f59e0b', 'Current Affairs': '#06b6d4', 'Promotional Post': '#64748b' };
+  const ch = channels.find(c => c.username === selChannel) || channels[0];
 
-  function addEvent() {
-    if (!modal || !form.note.trim()) return;
-    const key = `${year}-${String(month + 1).padStart(2, '0')}-${String(modal).padStart(2, '0')}`;
-    setEvents(prev => ({ ...prev, [key]: [...(prev[key] || []), { ...form, id: Date.now() }] }));
-    setModal(null); setForm(f => ({ ...f, note: '' }));
+  // Generate day plan
+  async function generatePlan() {
+    if (!ch) return;
+    setGenerating(true); setGenError(null); setPlan([]);
+    try {
+      const res = await fetch('/api/calendar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'generate',
+          channelUsername: ch.username,
+          channelTitle: ch.title || ch.subject,
+          subject: ch.subject,
+          contentTypes: ch.contentTypes || [],
+          subscribers: ch.subs,
+          bestHours: ch.bestHours || [],
+          date: planDate,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setPlan(data.posts);
+        // Also mark on mini calendar
+        setCalEvents(prev => ({ ...prev, [planDate]: data.posts.map(p => ({ type: p.type, note: p.text.slice(0, 40), id: p.id })) }));
+      } else setGenError(data.error || 'Failed to generate plan');
+    } catch { setGenError('Network error. Please retry.'); }
+    setGenerating(false);
   }
+
+  // Post a single message
+  async function postMessage(postId) {
+    const post = plan.find(p => p.id === postId);
+    if (!post || !ch) return;
+    setPostingId(postId);
+    // Update status to posting
+    setPlan(prev => prev.map(p => p.id === postId ? { ...p, status: 'posting' } : p));
+    try {
+      const res = await fetch('/api/calendar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'post', channelUsername: ch.username, text: post.text, pin: post.pin }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setPlan(prev => prev.map(p => p.id === postId ? { ...p, status: 'posted', messageId: data.messageId, pinned: data.pinned } : p));
+        // Remove from plan after 2s
+        setTimeout(() => setPlan(prev => prev.filter(p => p.id !== postId)), 2000);
+      } else {
+        setPlan(prev => prev.map(p => p.id === postId ? { ...p, status: 'failed', error: data.error } : p));
+      }
+    } catch {
+      setPlan(prev => prev.map(p => p.id === postId ? { ...p, status: 'failed', error: 'Network error' } : p));
+    }
+    setPostingId(null);
+  }
+
+  // Post all pending
+  async function postAll() {
+    const pending = plan.filter(p => p.status === 'pending');
+    for (const p of pending) { await postMessage(p.id); }
+  }
+
+  // Edit post text
+  function updateText(id, text) { setPlan(prev => prev.map(p => p.id === id ? { ...p, text } : p)); }
+  function togglePin(id)        { setPlan(prev => prev.map(p => p.id === id ? { ...p, pin: !p.pin } : p)); }
+
+  const pending = plan.filter(p => p.status === 'pending').length;
+
+  function addEvent() {}  // kept for compat
 
   return (
     <div>
-      <SectionHeader icon="📅" title="Content Calendar" subtitle="Plan and track posts across all channels" />
-      <div style={{ background: 'white', borderRadius: 12, padding: '18px 20px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-          <button onClick={prev} style={{ background: '#f1f5f9', border: 'none', borderRadius: 8, padding: '6px 14px', cursor: 'pointer', fontSize: 16 }}>←</button>
-          <span style={{ fontWeight: 700, fontSize: 16, color: '#0f172a' }}>{monthName}</span>
-          <button onClick={next} style={{ background: '#f1f5f9', border: 'none', borderRadius: 8, padding: '6px 14px', cursor: 'pointer', fontSize: 16 }}>→</button>
-        </div>
-        {/* Day headers */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 2, marginBottom: 4 }}>
-          {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => <div key={d} style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textAlign: 'center', padding: '4px 0' }}>{d}</div>)}
-        </div>
-        {/* Calendar grid */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 2 }}>
-          {Array.from({ length: firstDay }).map((_, i) => <div key={`e${i}`} />)}
-          {Array.from({ length: daysInMonth }, (_, i) => i + 1).map(day => {
-            const key = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-            const dayEvents = events[key] || [];
-            const isToday = day === today.getDate() && month === today.getMonth() && year === today.getFullYear();
-            return (
-              <div key={day} onClick={() => setModal(day)} style={{ minHeight: 70, background: isToday ? '#eff6ff' : '#fafafa', borderRadius: 6, padding: '4px 5px', cursor: 'pointer', border: isToday ? '1px solid #bfdbfe' : '1px solid #f1f5f9', transition: 'background 0.1s' }}
-                onMouseEnter={e => e.currentTarget.style.background = '#f0f9ff'}
-                onMouseLeave={e => e.currentTarget.style.background = isToday ? '#eff6ff' : '#fafafa'}>
-                <div style={{ fontSize: 11, fontWeight: isToday ? 700 : 500, color: isToday ? '#3b82f6' : '#374151', marginBottom: 3 }}>{day}</div>
-                {dayEvents.slice(0, 3).map(ev => (
-                  <div key={ev.id} style={{ fontSize: 9, background: typeColors[ev.type] || '#64748b', color: 'white', borderRadius: 3, padding: '1px 4px', marginBottom: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ev.note}</div>
-                ))}
-                {dayEvents.length > 3 && <div style={{ fontSize: 9, color: '#94a3b8' }}>+{dayEvents.length - 3} more</div>}
+      <SectionHeader icon="📅" title="Content Calendar" subtitle="AI-generated day plans · one-click post & pin to Telegram" />
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 20, alignItems: 'start' }}>
+
+        {/* ── LEFT: Day Planner ── */}
+        <div>
+          {/* Controls */}
+          <div style={{ background: 'white', borderRadius: 12, padding: '18px 20px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', marginBottom: 16 }}>
+            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+              <div style={{ flex: 1, minWidth: 180 }}>
+                <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#64748b', marginBottom: 5 }}>CHANNEL</label>
+                <select value={selChannel} onChange={e => { setSelChannel(e.target.value); setPlan([]); }}
+                  style={{ width: '100%', padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 13, outline: 'none', cursor: 'pointer' }}>
+                  {channels.map(c => <option key={c.username} value={c.username}>{c.title || c.subject}{c.teacher ? ` — ${c.teacher}` : ''} ({(c.subs||0).toLocaleString('en-IN')} subs)</option>)}
+                </select>
               </div>
-            );
-          })}
-        </div>
-      </div>
+              <div>
+                <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#64748b', marginBottom: 5 }}>DATE</label>
+                <input type="date" value={planDate} onChange={e => { setPlanDate(e.target.value); setPlan([]); }}
+                  style={{ padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 13, outline: 'none', cursor: 'pointer' }} />
+              </div>
+              <button onClick={generatePlan} disabled={generating}
+                style={{ padding: '9px 20px', background: generating ? '#94a3b8' : '#3b82f6', color: 'white', border: 'none', borderRadius: 8, cursor: generating ? 'not-allowed' : 'pointer', fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                {generating ? <><span style={{ width: 14, height: 14, border: '2px solid rgba(255,255,255,0.4)', borderTop: '2px solid white', borderRadius: '50%', animation: 'spin 0.8s linear infinite', display: 'inline-block' }} /> Generating…</> : '✨ Generate Day Plan'}
+              </button>
+            </div>
+            {ch && <div style={{ marginTop: 10, fontSize: 11, color: '#94a3b8' }}>Best hours: {ch.bestHours?.join(', ') || 'Not set'} · Subject: {ch.subject}</div>}
+          </div>
 
-      {/* Legend */}
-      <div style={{ display: 'flex', gap: 10, marginTop: 12, flexWrap: 'wrap' }}>
-        {Object.entries(typeColors).map(([type, color]) => (
-          <span key={type} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: '#374151' }}>
-            <span style={{ width: 10, height: 10, borderRadius: 2, background: color, display: 'inline-block' }} />{type}
-          </span>
-        ))}
-      </div>
+          {/* Error */}
+          {genError && <div style={{ background: '#fee2e2', color: '#dc2626', padding: '12px 16px', borderRadius: 10, fontSize: 13, marginBottom: 16, display: 'flex', justifyContent: 'space-between' }}>
+            <span>⚠️ {genError}</span>
+            <button onClick={() => setGenError(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#dc2626', fontWeight: 700 }}>✕</button>
+          </div>}
 
-      {/* Modal */}
-      {modal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }} onClick={() => setModal(null)}>
-          <div style={{ background: 'white', borderRadius: 12, padding: 24, width: 340, boxShadow: '0 8px 32px rgba(0,0,0,0.15)' }} onClick={e => e.stopPropagation()}>
-            <div style={{ fontWeight: 700, fontSize: 15, color: '#0f172a', marginBottom: 16 }}>
-              Add Post — {new Date(year, month, modal).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}
+          {/* Plan header */}
+          {plan.length > 0 && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>
+                📋 {plan.length} posts planned for {ch?.title || ch?.subject} · {new Date(planDate + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+              </div>
+              {pending > 0 && (
+                <button onClick={postAll} disabled={!!postingId}
+                  style={{ padding: '7px 16px', background: '#10b981', color: 'white', border: 'none', borderRadius: 8, cursor: postingId ? 'not-allowed' : 'pointer', fontSize: 12, fontWeight: 700 }}>
+                  📤 Post All ({pending} pending)
+                </button>
+              )}
             </div>
-            <div style={{ marginBottom: 12 }}>
-              <label style={{ fontSize: 11, fontWeight: 700, color: '#64748b', display: 'block', marginBottom: 4 }}>POST TYPE</label>
-              <select value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value }))} style={{ width: '100%', padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 13, outline: 'none' }}>
-                {Object.keys(typeColors).map(t => <option key={t}>{t}</option>)}
-              </select>
+          )}
+
+          {/* Post cards */}
+          {plan.length === 0 && !generating && (
+            <div style={{ background: 'white', borderRadius: 12, padding: '48px 24px', textAlign: 'center', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+              <div style={{ fontSize: 36, marginBottom: 10 }}>✨</div>
+              <div style={{ fontWeight: 700, color: '#0f172a', fontSize: 15, marginBottom: 6 }}>No plan generated yet</div>
+              <div style={{ fontSize: 12, color: '#94a3b8' }}>Select a channel and date, then click "Generate Day Plan".<br/>Claude will write actual Telegram-ready posts for the whole day.</div>
             </div>
-            <div style={{ marginBottom: 12 }}>
-              <label style={{ fontSize: 11, fontWeight: 700, color: '#64748b', display: 'block', marginBottom: 4 }}>CHANNEL</label>
-              <select value={form.channel} onChange={e => setForm(f => ({ ...f, channel: e.target.value }))} style={{ width: '100%', padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 13, outline: 'none' }}>
-                {channels.map(c => <option key={c.username} value={c.username}>{c.title || c.subject}</option>)}
-              </select>
-            </div>
-            <div style={{ marginBottom: 16 }}>
-              <label style={{ fontSize: 11, fontWeight: 700, color: '#64748b', display: 'block', marginBottom: 4 }}>POST NOTE / TOPIC</label>
-              <input value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} placeholder="e.g. Polity PYQ Quiz — Top 20" style={{ width: '100%', padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 13, outline: 'none', boxSizing: 'border-box' }} onKeyDown={e => e.key === 'Enter' && addEvent()} />
-            </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button onClick={addEvent} style={{ flex: 1, background: '#3b82f6', color: 'white', border: 'none', borderRadius: 8, padding: '9px', cursor: 'pointer', fontWeight: 700, fontSize: 13 }}>Add Post</button>
-              <button onClick={() => setModal(null)} style={{ flex: 1, background: '#f1f5f9', color: '#374151', border: 'none', borderRadius: 8, padding: '9px', cursor: 'pointer', fontWeight: 600, fontSize: 13 }}>Cancel</button>
-            </div>
+          )}
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {plan.map(post => {
+              const dt = displayType(post.type);
+              const tc = TYPE_COLOR[dt] || '#64748b';
+              const te = TYPE_EMOJI[dt] || '📌';
+              const isPosting = post.status === 'posting';
+              const isPosted  = post.status === 'posted';
+              const isFailed  = post.status === 'failed';
+              return (
+                <div key={post.id} style={{ background: 'white', borderRadius: 12, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', borderLeft: `4px solid ${isPosted ? '#10b981' : isFailed ? '#dc2626' : tc}`, opacity: isPosted ? 0.6 : 1, transition: 'opacity 0.5s' }}>
+                  {/* Card header */}
+                  <div style={{ padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #f1f5f9' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ background: '#0f172a', color: 'white', fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 12 }}>{post.time}</span>
+                      <span style={{ background: tc + '22', color: tc, fontSize: 11, fontWeight: 700, padding: '2px 9px', borderRadius: 12 }}>{te} {dt}</span>
+                      {post.pin && <span style={{ background: '#fef3c7', color: '#92400e', fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 12 }}>📌 PINNED</span>}
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                      {/* Pin toggle */}
+                      <button onClick={() => togglePin(post.id)} disabled={isPosted || isPosting}
+                        style={{ background: post.pin ? '#fef3c7' : '#f1f5f9', border: 'none', borderRadius: 6, padding: '4px 8px', cursor: 'pointer', fontSize: 11, fontWeight: 600, color: post.pin ? '#92400e' : '#64748b' }}>
+                        📌 {post.pin ? 'Unpin' : 'Pin'}
+                      </button>
+                      {/* Post button */}
+                      {!isPosted && !isFailed && (
+                        <button onClick={() => postMessage(post.id)} disabled={isPosting || !!postingId}
+                          style={{ background: isPosting ? '#94a3b8' : '#10b981', color: 'white', border: 'none', borderRadius: 6, padding: '5px 12px', cursor: isPosting ? 'not-allowed' : 'pointer', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 5 }}>
+                          {isPosting ? <><span style={{ width: 10, height: 10, border: '1.5px solid rgba(255,255,255,0.4)', borderTop: '1.5px solid white', borderRadius: '50%', animation: 'spin 0.8s linear infinite', display: 'inline-block' }} /> Posting…</> : '📤 Post & Pin'}
+                        </button>
+                      )}
+                      {isPosted && <span style={{ color: '#10b981', fontSize: 12, fontWeight: 700 }}>✅ Posted{post.pinned ? ' & Pinned' : ''}</span>}
+                      {isFailed && <span style={{ color: '#dc2626', fontSize: 11, fontWeight: 600 }}>❌ Failed</span>}
+                    </div>
+                  </div>
+
+                  {/* Post text - editable */}
+                  <div style={{ padding: '12px 16px' }}>
+                    <textarea value={post.text} onChange={e => updateText(post.id, e.target.value)}
+                      disabled={isPosted || isPosting}
+                      style={{ width: '100%', minHeight: 90, padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 12, fontFamily: 'monospace', lineHeight: 1.6, resize: 'vertical', outline: 'none', color: '#374151', background: isPosted ? '#f8fafc' : 'white', boxSizing: 'border-box' }} />
+                    {post.rationale && <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 4 }}>💡 {post.rationale}</div>}
+                    {isFailed && <div style={{ fontSize: 11, color: '#dc2626', marginTop: 6, background: '#fee2e2', padding: '5px 10px', borderRadius: 6 }}>⚠️ {post.error}</div>}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
-      )}
+
+        {/* ── RIGHT: Mini calendar ── */}
+        <div style={{ background: 'white', borderRadius: 12, padding: '16px 18px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', position: 'sticky', top: 20 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <button onClick={prev} style={{ background: '#f1f5f9', border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontSize: 14 }}>←</button>
+            <span style={{ fontWeight: 700, fontSize: 13, color: '#0f172a' }}>{monthName}</span>
+            <button onClick={next} style={{ background: '#f1f5f9', border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontSize: 14 }}>→</button>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 1, marginBottom: 4 }}>
+            {['S','M','T','W','T','F','S'].map((d, i) => <div key={i} style={{ fontSize: 9, fontWeight: 700, color: '#94a3b8', textAlign: 'center', padding: '2px 0' }}>{d}</div>)}
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 1 }}>
+            {Array.from({ length: firstDay }).map((_, i) => <div key={`e${i}`} />)}
+            {Array.from({ length: daysInMonth }, (_, i) => i + 1).map(day => {
+              const key = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+              const evts = calEvents[key] || [];
+              const isToday = key === todayKey;
+              const isSelected = key === planDate;
+              return (
+                <div key={day} onClick={() => setPlanDate(key)}
+                  style={{ minHeight: 36, background: isSelected ? '#3b82f6' : isToday ? '#eff6ff' : '#fafafa', borderRadius: 4, padding: '3px', cursor: 'pointer', border: isToday && !isSelected ? '1px solid #bfdbfe' : '1px solid transparent' }}>
+                  <div style={{ fontSize: 10, fontWeight: isToday ? 700 : 400, color: isSelected ? 'white' : isToday ? '#3b82f6' : '#374151', textAlign: 'center', marginBottom: 1 }}>{day}</div>
+                  {evts.slice(0, 2).map((ev, ei) => (
+                    <div key={ei} style={{ width: '100%', height: 3, borderRadius: 2, background: isSelected ? 'rgba(255,255,255,0.6)' : (TYPE_COLOR[displayType(ev.type)] || '#64748b'), marginBottom: 1 }} />
+                  ))}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Type legend */}
+          <div style={{ marginTop: 14, borderTop: '1px solid #f1f5f9', paddingTop: 12 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', marginBottom: 8 }}>CONTENT TYPES</div>
+            {Object.entries(TYPE_COLOR).map(([type, color]) => (
+              <div key={type} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5 }}>
+                <span style={{ width: 8, height: 8, borderRadius: 2, background: color, flexShrink: 0 }} />
+                <span style={{ fontSize: 10, color: '#64748b' }}>{TYPE_EMOJI[type]} {type}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
