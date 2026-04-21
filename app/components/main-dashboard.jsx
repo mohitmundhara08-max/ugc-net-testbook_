@@ -1612,6 +1612,7 @@ function PromotionsSection({ channels }) {
 }
 
 
+function AutomationSection() {
   const [bots, setBots] = useState({
     welcome:   { on: true,  name: 'Welcome Bot',       desc: 'Auto-greets new members with intro message + study resources link.', icon: '👋' },
     quiz:      { on: false, name: 'Daily Quiz Bot',    desc: 'Posts 1 auto-quiz at 8PM IST every day, generated from PYQ bank.',   icon: '🧪' },
