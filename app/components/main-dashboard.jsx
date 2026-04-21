@@ -1,6 +1,39 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
 
+// ─── Subscriber snapshot (localStorage) ──────────────────────────────────────
+// Saves daily subscriber counts so past dates show real historical numbers
+const SUB_SNAP_KEY = 'tg_sub_snapshots_v1';
+function saveSubSnapshot(date, channelData) {
+  // channelData: [{username, subscribers}]
+  if (typeof window === 'undefined') return;
+  try {
+    const store = JSON.parse(localStorage.getItem(SUB_SNAP_KEY) || '{}');
+    store[date] = {};
+    channelData.forEach(ch => { store[date][ch.username.toLowerCase()] = ch.subscribers; });
+    // Keep last 30 days only
+    const keys = Object.keys(store).sort().slice(-30);
+    const trimmed = {};
+    keys.forEach(k => { trimmed[k] = store[k]; });
+    localStorage.setItem(SUB_SNAP_KEY, JSON.stringify(trimmed));
+  } catch {}
+}
+function getSubSnapshot(date) {
+  if (typeof window === 'undefined') return null;
+  try {
+    const store = JSON.parse(localStorage.getItem(SUB_SNAP_KEY) || '{}');
+    return store[date] || null;
+  } catch { return null; }
+}
+function getAvailableSnapshotDates() {
+  if (typeof window === 'undefined') return [];
+  try {
+    return Object.keys(JSON.parse(localStorage.getItem(SUB_SNAP_KEY) || '{}')).sort().reverse();
+  } catch { return []; }
+}
+
+
+
 // ─── Static channel data ─────────────────────────────────────────────────────
 const STATIC_CHANNELS = [
   { username:'testbook_ugcnet',          subject:'Common',               name:'@testbook_ugcnet',              posts:12, rate:8.5,  teacher:'',          avgViews:3400, avgFwd:3.7, joined:55, left:36, bestHours:['3:30pm','6:30pm','7:30pm','8:30pm'], contentTypes:[{type:'Quiz / Poll',posts:5,avgViews:3800,rate:9.2,fwd:2.1},{type:'YouTube Class Link',posts:3,avgViews:4200,rate:10.4,fwd:4.8},{type:'PDF Notes',posts:2,avgViews:5100,rate:12.5,fwd:9.2},{type:'Current Affairs',posts:2,avgViews:3200,rate:7.8,fwd:3.6}] },
@@ -294,7 +327,7 @@ function OverviewSection({ channels, liveData, selectedDate }) {
 }
 
 // ─── CHANNELS SECTION ─────────────────────────────────────────────────────────
-function ChannelsSection({ channels, selectedDate, onDateChange }) {
+function ChannelsSection({ channels, selectedDate, onDateChange, postCounts, postItems, postCountsNote, isToday, snapshot, snapshotDates }) {
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState('subs');
   const [expanded, setExpanded] = useState(null);
@@ -342,13 +375,29 @@ function ChannelsSection({ channels, selectedDate, onDateChange }) {
         </div>
       </div>
 
-      {/* Data accuracy disclaimer */}
-      <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 10, padding: '10px 16px', marginBottom: 16, display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-        <span style={{ fontSize: 16, flexShrink: 0 }}>ℹ️</span>
-        <div style={{ fontSize: 12, color: '#0369a1', lineHeight: 1.6 }}>
-          <strong>Data accuracy note:</strong>&nbsp;
-          <span style={{ color: '#10b981', fontWeight: 700 }}>● Live</span> — Subscriber counts (fetched from Telegram Bot API on every page load).&nbsp;
-          <span style={{ color: '#f59e0b', fontWeight: 700 }}>~ Estimated</span> — View rates, avg views, forwards, joined/left are based on historical averages and are <strong>not real-time</strong>. Post count shows weekly average from static data. For live post analytics, Telegram's MTProto API integration is required.
+      {/* Data accuracy banner */}
+      <div style={{ background: !isToday && !snapshot ? '#fff7ed' : '#f0fdf4', border: `1px solid ${!isToday && !snapshot ? '#fed7aa' : '#bbf7d0'}`, borderRadius: 10, padding: '10px 16px', marginBottom: 16, display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+        <span style={{ fontSize: 16, flexShrink: 0 }}>{!isToday && !snapshot ? '⚠️' : 'ℹ️'}</span>
+        <div style={{ fontSize: 12, color: !isToday && !snapshot ? '#9a3412' : '#166534', lineHeight: 1.6 }}>
+          {isToday ? (
+            <>
+              <strong>● Subscribers:</strong> Live from Telegram Bot API (fetched just now).&nbsp;
+              <strong>📊 Post count:</strong> Real posts from Telegram bot updates (last ~48h).&nbsp;
+              <strong>~ View rate, avg views, forwards:</strong> Historical averages — Telegram Bot API does not provide per-post analytics.
+            </>
+          ) : snapshot ? (
+            <>
+              <strong>📅 {selectedDate}:</strong> Showing subscriber snapshot saved on that date.&nbsp;
+              <strong>📊 Post count:</strong> Real posts from bot updates where available.&nbsp;
+              Snapshots available for: {snapshotDates.slice(0, 5).join(', ')}{snapshotDates.length > 5 ? '…' : ''}.
+            </>
+          ) : (
+            <>
+              <strong>No snapshot for {selectedDate}.</strong> Subscriber counts shown are today's live data (not historical).
+              Snapshots save automatically each time you load the dashboard — check back after loading on that date.
+              Available snapshots: {snapshotDates.length > 0 ? snapshotDates.slice(0,5).join(', ') : 'none yet (loads today on first visit)'}.
+            </>
+          )}
         </div>
       </div>
 
@@ -356,10 +405,12 @@ function ChannelsSection({ channels, selectedDate, onDateChange }) {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {filtered.map(ch => {
           const ds = getDateStats(ch, selectedDate);
-          const history = buildHistory(ch.subs, selectedDate);
+          const history = buildHistory(ch.liveSubs || ch.subs, selectedDate);
           const isExp = expanded === ch.username;
           const health = ch.rate >= 8 ? 'great' : ch.rate >= 6 ? 'good' : ch.rate >= 4 ? 'low' : 'critical';
           const healthColor = { great: '#10b981', good: '#3b82f6', low: '#f59e0b', critical: '#dc2626' }[health];
+          const dayPostCount = postCounts[selectedDate]?.[ch.username.toLowerCase()] || 0;
+          const postDataAvailable = Object.keys(postCounts).length > 0;
           return (
             <div key={ch.username} style={{ background: 'white', borderRadius: 12, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', borderLeft: `4px solid ${healthColor}` }}>
               <div style={{ padding: '14px 16px', cursor: 'pointer' }} onClick={() => setExpanded(isExp ? null : ch.username)}>
@@ -369,8 +420,21 @@ function ChannelsSection({ channels, selectedDate, onDateChange }) {
                     <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 3, flexWrap: 'wrap' }}>
                       <a href={`https://t.me/${ch.username}`} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} style={{ fontSize: 11, color: '#3b82f6', textDecoration: 'none' }}>{ch.name} ↗</a>
                       <span style={{ background: '#dbeafe', color: '#1e40af', padding: '1px 7px', borderRadius: 20, fontSize: 9, fontWeight: 700 }}>OWN</span>
-                      <span style={{ background: '#dcfce7', color: '#15803d', padding: '1px 6px', borderRadius: 20, fontSize: 9, fontWeight: 700 }}>● LIVE SUBS</span>
-                      <span style={{ fontSize: 11, color: '#64748b' }}>{ch.subs.toLocaleString('en-IN')} subs · {ch.posts} posts/wk avg</span>
+                      {/* Subscriber badge — shows source clearly */}
+                      <span style={{
+                        background: ch.subsSource === 'live' ? '#dcfce7' : ch.subsSource === 'snapshot' ? '#dbeafe' : '#fff7ed',
+                        color:      ch.subsSource === 'live' ? '#15803d' : ch.subsSource === 'snapshot' ? '#1e40af'  : '#9a3412',
+                        padding: '1px 7px', borderRadius: 20, fontSize: 9, fontWeight: 700
+                      }}>
+                        {ch.subsSource === 'live' ? '● LIVE' : ch.subsSource === 'snapshot' ? `📅 ${selectedDate.slice(5)} snapshot` : `⚠️ no ${selectedDate.slice(5)} data · showing live`}
+                      </span>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: '#0f172a' }}>
+                        {ch.subs > 0 ? ch.subs.toLocaleString('en-IN') : '—'} subs
+                      </span>
+                      {/* Post count — real from Telegram bot getUpdates */}
+                      <span style={{ background: dayPostCount > 0 ? '#dbeafe' : '#f1f5f9', color: dayPostCount > 0 ? '#1e40af' : '#94a3b8', padding: '1px 7px', borderRadius: 20, fontSize: 9, fontWeight: 700 }}>
+                        {!postDataAvailable ? 'posts: loading…' : `${dayPostCount} post${dayPostCount !== 1 ? 's' : ''} ${isToday ? 'today' : selectedDate.slice(5)}`}
+                      </span>
                     </div>
                   </div>
                   <span style={{ color: '#94a3b8', fontSize: 11, flexShrink: 0, marginLeft: 8 }}>{isExp ? '▲' : '▼'}</span>
@@ -389,13 +453,52 @@ function ChannelsSection({ channels, selectedDate, onDateChange }) {
                     <div style={{ fontSize: 10, fontWeight: 700, color: '#64748b', letterSpacing: '0.05em', marginBottom: 6 }}>7-DAY TREND (SUBS + VIEW RATE)</div>
                     <MiniDualChart history={history} color={healthColor} />
                   </div>
-                  {/* Content types table */}
+                  {/* ACTUAL POSTS from Telegram — real data from bot getUpdates */}
+                  {(() => {
+                    const chKey = ch.username.toLowerCase();
+                    const realPosts = postItems[selectedDate]?.[chKey] || [];
+                    const postDataAvailableForChannel = Object.keys(postItems).length > 0;
+                    return (
+                      <div style={{ marginBottom: 14 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                          <div style={{ fontSize: 10, fontWeight: 700, color: '#64748b', letterSpacing: '0.05em' }}>
+                            ACTUAL POSTS — {selectedDate} (from Telegram)
+                          </div>
+                          <div style={{ fontSize: 9, color: postDataAvailableForChannel ? '#10b981' : '#94a3b8', fontWeight: 600 }}>
+                            {postDataAvailableForChannel ? '● Real data' : '⏳ Loading…'}
+                          </div>
+                        </div>
+                        {!postDataAvailableForChannel ? (
+                          <div style={{ fontSize: 11, color: '#94a3b8', fontStyle: 'italic' }}>Fetching posts from Telegram…</div>
+                        ) : realPosts.length === 0 ? (
+                          <div style={{ background: '#f8fafc', borderRadius: 8, padding: '10px 12px', fontSize: 11, color: '#94a3b8' }}>
+                            No posts found for this channel on {selectedDate}.
+                            {!isToday && <div style={{ marginTop: 4, fontSize: 10 }}>Note: getUpdates only covers the last ~48 hours.</div>}
+                          </div>
+                        ) : (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                            {realPosts.map((p, i) => (
+                              <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', background: '#f8fafc', borderRadius: 8, padding: '7px 10px' }}>
+                                <span style={{ fontSize: 10, color: '#94a3b8', whiteSpace: 'nowrap', flexShrink: 0, marginTop: 1 }}>{p.time}</span>
+                                <span style={{ background: typeColor(p.type) + '22', color: typeColor(p.type), fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 10, whiteSpace: 'nowrap', flexShrink: 0 }}>{typeEmoji(p.type)} {p.type}</span>
+                                <span style={{ fontSize: 11, color: '#374151', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.preview}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+                  {/* Content mix — historical performance baselines only, no fake post counts */}
                   {ch.contentTypes?.length > 0 && (
                   <div style={{ marginBottom: 14 }}>
-                    <div style={{ fontSize: 10, fontWeight: 700, color: '#64748b', letterSpacing: '0.05em', marginBottom: 8 }}>CONTENT BREAKDOWN</div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: '#64748b', letterSpacing: '0.05em' }}>CONTENT MIX ~ AVG PERFORMANCE</div>
+                      <div style={{ fontSize: 9, color: '#f59e0b', fontWeight: 600 }}>~ Historical baselines only</div>
+                    </div>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                       <thead><tr style={{ background: '#f1f5f9' }}>
-                        {['Content Type','Posts','Avg Views','Rate','Fwd'].map(h => <th key={h} style={{ padding: '6px 10px', textAlign: h === 'Content Type' ? 'left' : 'right', fontWeight: 600, color: '#64748b', fontSize: 11, borderBottom: '1px solid #e2e8f0' }}>{h}</th>)}
+                        {['Content Type','Avg Views~','Rate~','Fwd~'].map(h => <th key={h} style={{ padding: '6px 10px', textAlign: h === 'Content Type' ? 'left' : 'right', fontWeight: 600, color: '#64748b', fontSize: 11, borderBottom: '1px solid #e2e8f0' }}>{h}</th>)}
                       </tr></thead>
                       <tbody>
                         {ch.contentTypes.map((ct, i) => (
@@ -406,7 +509,6 @@ function ChannelsSection({ channels, selectedDate, onDateChange }) {
                                 {displayType(ct.type)}
                               </span>
                             </td>
-                            <td style={{ padding: '6px 10px', textAlign: 'right', color: '#374151' }}>{ct.posts}</td>
                             <td style={{ padding: '6px 10px', textAlign: 'right' }}>{ct.avgViews >= 1000 ? `${(ct.avgViews/1000).toFixed(1)}K` : ct.avgViews}</td>
                             <td style={{ padding: '6px 10px', textAlign: 'right' }}><span style={{ fontWeight: 700, color: ct.rate > 8 ? '#10b981' : ct.rate > 5 ? '#3b82f6' : '#f59e0b' }}>{ct.rate}%</span></td>
                             <td style={{ padding: '6px 10px', textAlign: 'right', color: '#374151' }}>{ct.fwd}</td>
@@ -1121,7 +1223,9 @@ function YTCalendarSection({ channels }) {
       const data = await res.json();
       if (data.results) {
         data.results.forEach(r => {
-          if (r.success) setPostedItems(prev => [...prev, { id: `ph_${Date.now()}_${r.channel}`, channel: r.channel, messageId: r.messageId, pinned: r.pinned, preview: postMsg.replace(/<[^>]+>/g,'').slice(0,60) }]);
+          if (r.success) {
+            setPostedItems(prev => [...prev, { id: `ph_${Date.now()}_${r.channel}`, channel: r.channel, messageId: r.messageId, pinned: r.pinned, preview: postMsg.replace(/<[^>]+>/g,'').slice(0,60) }]);
+          }
         });
         setModal(null);
       }
@@ -1351,7 +1455,9 @@ function MasterClassSection({ channels }) {
       const data = await res.json();
       if (data.results) {
         data.results.forEach(r => {
-          if (r.success) setPostedItems(prev => [...prev, { id: `ph_${Date.now()}_${r.channel}`, channel: r.channel, messageId: r.messageId, pinned: r.pinned, preview: postMsg.replace(/<[^>]+>/g,'').slice(0,60) }]);
+          if (r.success) {
+            setPostedItems(prev => [...prev, { id: `ph_${Date.now()}_${r.channel}`, channel: r.channel, messageId: r.messageId, pinned: r.pinned, preview: postMsg.replace(/<[^>]+>/g,'').slice(0,60) }]);
+          }
         });
         setModal(null);
       }
@@ -1713,8 +1819,12 @@ export default function MainDashboard() {
   const [selectedDate,   setSelectedDate]  = useState(new Date().toISOString().slice(0, 10));
   const [competitorData, setCompetitorData] = useState({});
   const [compLoading,    setCompLoading]   = useState(true);
+  const [postCounts,     setPostCounts]    = useState({}); // {date: {username: count}}
+  const [postItems,      setPostItems]     = useState({}); // {date: {username: [{type,preview,time}]}}
+  const [postCountsNote, setPostCountsNote] = useState('');
+  const today = new Date().toISOString().slice(0, 10);
 
-  // Fetch own channels
+  // Fetch own channels + save subscriber snapshot
   useEffect(() => {
     fetch('/api/channels')
       .then(r => r.json())
@@ -1722,10 +1832,26 @@ export default function MainDashboard() {
         if (data.success) {
           setLiveData(data);
           setLastFetched(new Date(data.fetchedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }));
+          // Save today's subscriber counts as a snapshot
+          saveSubSnapshot(today, data.channels || []);
         }
       })
       .catch(() => {})
       .finally(() => setLoading(false));
+  }, []);
+
+  // Fetch real post counts from Telegram getUpdates
+  useEffect(() => {
+    fetch('/api/posts')
+      .then(r => r.json())
+      .then(data => {
+        if (data.success) {
+          setPostCounts(data.counts || {});
+          setPostItems(data.posts   || {});
+          setPostCountsNote(data.note || '');
+        }
+      })
+      .catch(() => {});
   }, []);
 
   // Fetch competitors
@@ -1743,13 +1869,24 @@ export default function MainDashboard() {
       .finally(() => setCompLoading(false));
   }, []);
 
-  // Merge live subscriber counts into static channel data
+  // Merge channels: use snapshot subs for past dates, live subs for today
+  // IMPORTANT: Never show 0 for past dates — always fall back to live (today's) count
+  const isToday = selectedDate === today;
+  const snapshot = !isToday ? getSubSnapshot(selectedDate) : null;
   const channels = STATIC_CHANNELS.map(ch => {
     const live = liveData?.channels?.find(l => l.username.toLowerCase() === ch.username.toLowerCase());
-    return { ...ch, subs: live?.subscribers ?? 0, title: live?.title || ch.subject };
+    const liveSubs = live?.subscribers ?? 0;
+    // For past dates: use snapshot if we have one, else use today's live count as proxy
+    const snapshotSubs = snapshot?.[ch.username.toLowerCase()];
+    const subs = isToday
+      ? liveSubs
+      : (snapshotSubs !== undefined ? snapshotSubs : liveSubs);
+    const subsSource = isToday ? 'live' : snapshotSubs !== undefined ? 'snapshot' : 'live-proxy';
+    return { ...ch, subs, liveSubs, subsSource, title: live?.title || ch.subject };
   });
 
   const totalSubs = channels.reduce((s, c) => s + c.subs, 0);
+  const snapshotDates = getAvailableSnapshotDates();
 
   if (loading) {
     return (
@@ -1768,8 +1905,8 @@ export default function MainDashboard() {
       <style>{`@keyframes spin{to{transform:rotate(360deg)}} * { box-sizing: border-box; }`}</style>
       <Sidebar active={activeSection} onNav={setActiveSection} totalSubs={totalSubs} lastFetched={lastFetched} />
       <main style={{ flex: 1, padding: '28px 32px', overflowY: 'auto', minWidth: 0 }}>
-        {activeSection === 'overview'     && <OverviewSection      channels={channels} liveData={liveData} selectedDate={selectedDate} />}
-        {activeSection === 'channels'     && <ChannelsSection      channels={channels} selectedDate={selectedDate} onDateChange={setSelectedDate} />}
+        {activeSection === 'overview'     && <OverviewSection      channels={channels} liveData={liveData} selectedDate={selectedDate} isToday={isToday} snapshot={snapshot} />}
+        {activeSection === 'channels'     && <ChannelsSection      channels={channels} selectedDate={selectedDate} onDateChange={setSelectedDate} postCounts={postCounts} postItems={postItems} postCountsNote={postCountsNote} isToday={isToday} snapshot={snapshot} snapshotDates={snapshotDates} />}
         {activeSection === 'competitive'  && <CompetitiveSection   channels={channels} competitorData={competitorData} competitorLoading={compLoading} />}
         {activeSection === 'insights'     && <InsightsSection      channels={channels} competitorData={competitorData} selectedDate={selectedDate} />}
         {activeSection === 'calendar'     && <CalendarSection      channels={channels} />}
