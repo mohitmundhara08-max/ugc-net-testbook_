@@ -212,13 +212,23 @@ function OverviewSection({ channels, liveData, selectedDate }) {
     <div>
       <SectionHeader icon="📊" title="Overview" subtitle="Live snapshot across all 25 UGC NET channels" />
 
+      {/* Data accuracy banner */}
+      <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 10, padding: '10px 16px', marginBottom: 20, display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+        <span style={{ fontSize: 16, flexShrink: 0 }}>ℹ️</span>
+        <div style={{ fontSize: 12, color: '#0369a1', lineHeight: 1.7 }}>
+          <strong>What's live vs estimated:</strong><br/>
+          <span style={{ color: '#10b981', fontWeight: 700 }}>● LIVE</span> — Subscriber counts for all 25 channels, fetched from Telegram Bot API on each page load.<br/>
+          <span style={{ color: '#f59e0b', fontWeight: 700 }}>~ ESTIMATED</span> — View rates, avg views, forwards, joined/left, post counts are <strong>historical averages from static data</strong> — not real-time. They do not reflect today's actual activity. Real-time post analytics require Telegram's MTProto API.
+        </div>
+      </div>
+
       {/* Metric cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(160px,1fr))', gap: 14, marginBottom: 28 }}>
-        <MetricCard label="TOTAL SUBSCRIBERS" value={totalSubs.toLocaleString('en-IN')} sub="Live from Telegram" color="#3b82f6" sparkData={sparkSubs} />
-        <MetricCard label="NET GROWTH TODAY" value={`+${netGrowth}`} sub="joined − left" color="#10b981" trend={4.2} />
-        <MetricCard label="AVG VIEW RATE" value={`${avgRate}%`} sub="across all channels" color="#8b5cf6" />
-        <MetricCard label="TOTAL POSTS/WK" value={totalPosts} sub="combined weekly" color="#f59e0b" />
-        <MetricCard label="HEALTHY CHANNELS" value={`${healthyCount}/${channels.length}`} sub="rate ≥ 6%" color="#06b6d4" />
+        <MetricCard label="TOTAL SUBSCRIBERS ● LIVE" value={totalSubs.toLocaleString('en-IN')} sub="Fetched from Telegram now" color="#3b82f6" sparkData={sparkSubs} />
+        <MetricCard label="NET GROWTH ~ EST" value={`~+${netGrowth}`} sub="Historical avg · not today's count" color="#10b981" />
+        <MetricCard label="AVG VIEW RATE ~ EST" value={`~${avgRate}%`} sub="Historical average" color="#8b5cf6" />
+        <MetricCard label="TOTAL POSTS/WK ~ EST" value={totalPosts} sub="Weekly avg across channels" color="#f59e0b" />
+        <MetricCard label="HEALTHY CHANNELS ● LIVE" value={`${healthyCount}/${channels.length}`} sub="Based on live sub counts" color="#06b6d4" />
       </div>
 
       {/* Top channels */}
@@ -332,6 +342,16 @@ function ChannelsSection({ channels, selectedDate, onDateChange }) {
         </div>
       </div>
 
+      {/* Data accuracy disclaimer */}
+      <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 10, padding: '10px 16px', marginBottom: 16, display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+        <span style={{ fontSize: 16, flexShrink: 0 }}>ℹ️</span>
+        <div style={{ fontSize: 12, color: '#0369a1', lineHeight: 1.6 }}>
+          <strong>Data accuracy note:</strong>&nbsp;
+          <span style={{ color: '#10b981', fontWeight: 700 }}>● Live</span> — Subscriber counts (fetched from Telegram Bot API on every page load).&nbsp;
+          <span style={{ color: '#f59e0b', fontWeight: 700 }}>~ Estimated</span> — View rates, avg views, forwards, joined/left are based on historical averages and are <strong>not real-time</strong>. Post count shows weekly average from static data. For live post analytics, Telegram's MTProto API integration is required.
+        </div>
+      </div>
+
       {/* Channel cards */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {filtered.map(ch => {
@@ -349,13 +369,14 @@ function ChannelsSection({ channels, selectedDate, onDateChange }) {
                     <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 3, flexWrap: 'wrap' }}>
                       <a href={`https://t.me/${ch.username}`} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} style={{ fontSize: 11, color: '#3b82f6', textDecoration: 'none' }}>{ch.name} ↗</a>
                       <span style={{ background: '#dbeafe', color: '#1e40af', padding: '1px 7px', borderRadius: 20, fontSize: 9, fontWeight: 700 }}>OWN</span>
-                      <span style={{ fontSize: 11, color: '#64748b' }}>{ch.subs.toLocaleString('en-IN')} subs · {ds.posts} posts today</span>
+                      <span style={{ background: '#dcfce7', color: '#15803d', padding: '1px 6px', borderRadius: 20, fontSize: 9, fontWeight: 700 }}>● LIVE SUBS</span>
+                      <span style={{ fontSize: 11, color: '#64748b' }}>{ch.subs.toLocaleString('en-IN')} subs · {ch.posts} posts/wk avg</span>
                     </div>
                   </div>
                   <span style={{ color: '#94a3b8', fontSize: 11, flexShrink: 0, marginLeft: 8 }}>{isExp ? '▲' : '▼'}</span>
                 </div>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  {[['View Rate', `${ds.rate}%`], ['Avg Views', ds.avgViews >= 1000 ? `${(ds.avgViews/1000).toFixed(1)}K` : ds.avgViews], ['Fwd', ch.avgFwd], ['Joined', `+${ds.joined}`], ['Left', `-${ds.left}`]].map(([k, v]) => (
+                  {[['View Rate~', `${ds.rate}%`], ['Avg Views~', ds.avgViews >= 1000 ? `${(ds.avgViews/1000).toFixed(1)}K` : ds.avgViews], ['Fwd~', ch.avgFwd], ['Joined~', `+${ds.joined}`], ['Left~', `-${ds.left}`]].map(([k, v]) => (
                     <span key={k} style={{ background: '#f8fafc', padding: '3px 9px', borderRadius: 20, fontSize: 11, color: '#374151' }}>{k}: <strong>{v}</strong></span>
                   ))}
                 </div>
