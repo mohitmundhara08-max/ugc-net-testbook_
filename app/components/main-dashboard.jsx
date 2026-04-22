@@ -1154,12 +1154,34 @@ function ScheduleTable({ rows, cols, onRowsChange, accentColor }) {
   // Load SheetJS once
   const [xlsxReady, setXlsxReady] = useState(false);
   useEffect(() => {
-    if (typeof window !== 'undefined' && window.XLSX) { setXlsxReady(true); return; }
+  if (typeof window === 'undefined') return;
+  if (window.XLSX) { setXlsxReady(true); return; }
+
+  // Load script with fallback CDN + polling
+  const loadScript = (src, onSuccess, onFail) => {
     const s = document.createElement('script');
-    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
-    s.onload = () => setXlsxReady(true);
+    s.src = src;
+    s.onload = onSuccess;
+    s.onerror = onFail;
     document.head.appendChild(s);
-  }, []);
+  };
+
+  loadScript(
+    'https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js',
+    () => setXlsxReady(true),
+    () => loadScript(
+      'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js',
+      () => setXlsxReady(true),
+      () => console.warn('XLSX failed to load from both CDNs')
+    )
+  );
+
+  // Polling fallback (handles race conditions)
+  const interval = setInterval(() => {
+    if (window.XLSX) { setXlsxReady(true); clearInterval(interval); }
+  }, 500);
+  return () => clearInterval(interval);
+}, []);
 
   // Parse Excel file
   function handleFile(file) {
