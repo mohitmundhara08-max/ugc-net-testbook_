@@ -1152,9 +1152,9 @@ function ScheduleTable({ rows, cols, onRowsChange, accentColor }) {
   const [pasteErr,  setPasteErr]  = useState('');
 
   // Load SheetJS once
-  const [xlsxReady, setXlsxReady] = useState(!!window.XLSX);
+  const [xlsxReady, setXlsxReady] = useState(false);
   useEffect(() => {
-    if (window.XLSX) return;
+    if (typeof window !== 'undefined' && window.XLSX) { setXlsxReady(true); return; }
     const s = document.createElement('script');
     s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
     s.onload = () => setXlsxReady(true);
