@@ -1,92 +1,101 @@
-export const dynamic = 'force-dynamic';
+// app/api/posts/route.js
+// Paginates through ALL pending Telegram updates (not just 100)
 
-const BOT = process.env.TELEGRAM_BOT_TOKEN;
+const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 
 export async function GET() {
-  if (!BOT) return Response.json({ success: false, error: 'Bot token not set' }, { status: 500 });
+  if (!BOT_TOKEN) {
+    return Response.json({ success: false, error: 'TELEGRAM_BOT_TOKEN not set' });
+  }
 
   try {
-    // getUpdates with allowed_updates=channel_post gives us real channel posts
-    // We don't advance the offset so we don't consume the update queue
-    const res = await fetch(
-      `https://api.telegram.org/bot${BOT}/getUpdates?limit=100&timeout=0&allowed_updates=%5B%22channel_post%22%5D`,
-      { cache: 'no-store' }
-    );
-    const data = await res.json();
+    // Paginate through all pending updates — up to 10 batches of 100 = 1000 updates
+    // This covers 25 channels × ~10 posts/day × 2 days = ~500 updates comfortably
+    const allUpdates = [];
+    let offset = undefined;
 
-    if (!data.ok) {
-      return Response.json({ success: false, error: data.description || 'Telegram error' });
+    for (let batch = 0; batch < 10; batch++) {
+      const url = `https://api.telegram.org/bot${BOT_TOKEN}/getUpdates?limit=100${offset !== undefined ? `&offset=${offset}` : ''}`;
+      const res  = await fetch(url, { cache: 'no-store' });
+      const data = await res.json();
+
+      if (!data.ok || !data.result?.length) break;
+
+      allUpdates.push(...data.result);
+
+      // If we got fewer than 100, we've reached the end of the queue
+      if (data.result.length < 100) break;
+
+      // Advance offset to get next batch (this consumes the current batch from Telegram's queue)
+      offset = data.result[data.result.length - 1].update_id + 1;
     }
 
-    // Counts per channel per date + actual posts list
-    // counts: { "2026-04-22": { "testbook_ugcnet": 4 } }
-    // posts:  { "2026-04-22": { "testbook_ugcnet": [{text, type, time}] } }
+    // Build counts and post items keyed by date → channel
     const counts = {};
     const posts  = {};
+    const cutoff = Date.now() - 48 * 60 * 60 * 1000; // 48h ago
 
-    for (const update of data.result || []) {
-      const post = update.channel_post;
-      if (!post) continue;
+    for (const update of allUpdates) {
+      const msg = update.message || update.channel_post || update.edited_channel_post;
+      if (!msg) continue;
 
-      // Convert Unix timestamp → IST date string
-      const ist = new Date(post.date * 1000 + 5.5 * 60 * 60 * 1000);
-      const dateKey = ist.toISOString().slice(0, 10);
-      const timeStr = ist.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+      const ts = msg.date * 1000;
+      if (ts < cutoff) continue; // skip older than 48h
 
-      const chatKey = (post.chat.username || String(Math.abs(post.chat.id))).toLowerCase();
+      const date = new Date(ts).toLocaleDateString('sv-SE', { timeZone: 'Asia/Kolkata' }); // YYYY-MM-DD in IST
+      const time = new Date(ts).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' }).toLowerCase();
 
-      // Count
-      if (!counts[dateKey]) counts[dateKey] = {};
-      counts[dateKey][chatKey] = (counts[dateKey][chatKey] || 0) + 1;
+      const rawUsername = msg.chat?.username || '';
+      const username    = rawUsername.toLowerCase();
+      if (!username) continue;
 
-      // Store post preview (text or poll or photo)
-      if (!posts[dateKey]) posts[dateKey] = {};
-      if (!posts[dateKey][chatKey]) posts[dateKey][chatKey] = [];
+      // Classify post type
+      let type    = 'Message';
+      let preview = (msg.text || msg.caption || '').slice(0, 80).replace(/\n/g, ' ');
 
-      let type = 'Message';
-      let preview = '';
-
-      if (post.poll) {
-        type = 'MCQ Poll';
-        preview = post.poll.question?.slice(0, 80) || '';
-      } else if (post.photo) {
+      if (msg.poll) {
+        type    = msg.poll.type === 'quiz' ? 'MCQ Poll' : 'Poll';
+        preview = (msg.poll.question || '').slice(0, 80);
+      } else if (msg.photo?.length) {
         type = 'Photo';
-        preview = post.caption?.slice(0, 80) || '(image)';
-      } else if (post.video) {
+      } else if (msg.video || msg.video_note) {
         type = 'Video';
-        preview = post.caption?.slice(0, 80) || '(video)';
-      } else if (post.document) {
+      } else if (msg.document) {
         type = 'Document';
-        preview = post.caption?.slice(0, 80) || post.document.file_name || '(file)';
-      } else if (post.text) {
-        // Detect content type from text
-        const t = post.text.toLowerCase();
-        if (t.includes('youtube.com') || t.includes('youtu.be') || t.includes('class') || t.includes('lecture')) type = 'YouTube Class';
-        else if (t.includes('mcq') || t.includes('question') || t.includes('answer') || t.includes('option')) type = 'MCQ';
-        else if (t.includes('pdf') || t.includes('notes') || t.includes('download')) type = 'PDF Notes';
-        else if (t.includes('current affairs') || t.includes('ca ') || t.includes('today\'s')) type = 'Current Affairs';
-        else type = 'Post';
-        preview = post.text.slice(0, 80);
+      } else if (msg.text?.match(/youtube\.com|youtu\.be/i)) {
+        type = 'YouTube Class';
+      } else if (msg.text?.match(/t\.me\//i)) {
+        type = 'Telegram Link';
       }
 
-      posts[dateKey][chatKey].push({
-        type,
-        preview,
-        time: timeStr,
-        messageId: post.message_id,
-      });
+      // counts
+      if (!counts[date])              counts[date]          = {};
+      if (!counts[date][username])    counts[date][username] = 0;
+      counts[date][username]++;
+
+      // posts
+      if (!posts[date])              posts[date]          = {};
+      if (!posts[date][username])    posts[date][username] = [];
+      posts[date][username].push({ type, preview, time, messageId: msg.message_id });
+    }
+
+    // Sort posts within each channel by time (messageId is monotonically increasing)
+    for (const date of Object.keys(posts)) {
+      for (const ch of Object.keys(posts[date])) {
+        posts[date][ch].sort((a, b) => a.messageId - b.messageId);
+      }
     }
 
     return Response.json({
       success: true,
       counts,
       posts,
-      totalUpdates: data.result?.length || 0,
-      note: 'Real posts from Telegram bot getUpdates · covers ~48h window',
+      totalUpdates: allUpdates.length,
+      note: `Real posts from Telegram getUpdates · ${allUpdates.length} updates collected · covers last 48h`,
     });
 
-  } catch (err) {
-    console.error('Posts API error:', err);
-    return Response.json({ success: false, error: err.message }, { status: 500 });
+  } catch (e) {
+    console.error('[posts] error:', e.message);
+    return Response.json({ success: false, error: e.message });
   }
 }
