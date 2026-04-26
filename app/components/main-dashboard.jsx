@@ -212,28 +212,7 @@ function MetricCard({ label, value, sub, color='#3b82f6', trend, sparkData }) {
   );
 }
 
-// ── Helper: simulate daily variation ───────────────────────────────────────
-function simulateVariation(ch, date) {
-  const d = date ? new Date(date+'T12:00:00') : new Date();
-  const seed = d.getDate() + 31 * d.getMonth();
-  return {
-    joined: Math.max(1, Math.round(ch.joined * (0.8 + seed % 5 * 0.1))),
-    left:   Math.max(1, Math.round(ch.left   * (0.7 + seed % 4 * 0.1))),
-    avgViews: Math.round(ch.avgViews * (0.88 + seed % 6 * 0.04)),
-    rate: parseFloat((ch.rate * (0.9 + seed % 5 * 0.04)).toFixed(1)),
-    posts: Math.max(1, Math.round(ch.posts * (0.75 + seed % 5 * 0.1))),
-  };
-}
 
-function buildHistory(liveSubs, date) {
-  const base = date ? new Date(date+'T12:00:00') : new Date();
-  return Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(base); d.setDate(d.getDate() - (6 - i));
-    const seed = 7*d.getDate() + 31*d.getMonth();
-    const decay = 1 - 0.0012*(6-i) - 0.0004*Math.sin(seed+(6-i));
-    return { label: d.toLocaleDateString('en-IN',{day:'numeric',month:'short'}), subs: Math.round(liveSubs*decay), rate: parseFloat((3.5+1.3*Math.sin((seed+(6-i))*0.9)).toFixed(1)) };
-  });
-}
 
 // ── Overview section ────────────────────────────────────────────────────────
 function OverviewSection({ channels }) {
@@ -320,138 +299,152 @@ function OverviewSection({ channels }) {
 }
 
 // ── Channels section ────────────────────────────────────────────────────────
-function ChannelsSection({ channels, selectedDate, onDateChange, postCounts, postItems, postCountsNote, isToday, snapshot, snapshotDates }) {
-  const [search, setSearch] = useState('');
-  const [sortBy, setSortBy] = useState('subs');
-  const [expanded, setExpanded] = useState(null);
+function ChannelsSection({ channels, selectedDate, onDateChange, postCounts, postItems }) {
+  const [search,     setSearch]     = useState('');
+  const [sortBy,     setSortBy]     = useState('subs');
+  const [expanded,   setExpanded]   = useState(null);
   const [filterSubj, setFilterSubj] = useState('All');
-  const today = new Date().toISOString().slice(0,10);
-  const subjects = ['All', ...Array.from(new Set(channels.map(c=>c.subject)))];
-  const dates = Array.from({length:5},(_,i)=>{ const d=new Date(); d.setDate(d.getDate()-i); return { key:d.toISOString().slice(0,10), label:i===0?'Today':d.toLocaleDateString('en-IN',{day:'numeric',month:'short'}) }; });
+
+  const today     = new Date().toISOString().slice(0,10);
+  const yesterday = new Date(Date.now()-864e5).toISOString().slice(0,10);
+  const dates     = [{ key:today, label:'Today' },{ key:yesterday, label:'Yesterday' }];
+  const subjects  = ['All', ...Array.from(new Set(channels.map(c=>c.subject)))];
+
+  const getPostCnt = (ch, date) => postCounts?.[date]?.[ch.username.toLowerCase()] || 0;
+  const getPosts   = (ch, date) => postItems?.[date]?.[ch.username.toLowerCase()] || [];
+
+  // Real content-type breakdown from actual posts
+  const typeBreakdown = (posts) => {
+    const map = {};
+    posts.forEach(p => { map[p.type] = (map[p.type]||0)+1; });
+    return Object.entries(map).sort((a,b)=>b[1]-a[1]);
+  };
 
   const filtered = channels
-    .filter(c=>(filterSubj==='All'||c.subject===filterSubj)&&(c.subject.toLowerCase().includes(search.toLowerCase())||(c.title||'').toLowerCase().includes(search.toLowerCase())||c.username.toLowerCase().includes(search.toLowerCase())))
-    .sort((a,b)=>sortBy==='subs'?b.subs-a.subs:sortBy==='rate'?b.rate-a.rate:b.posts-a.posts);
+    .filter(c =>
+      (filterSubj==='All' || c.subject===filterSubj) &&
+      (c.subject.toLowerCase().includes(search.toLowerCase()) ||
+       (c.title||'').toLowerCase().includes(search.toLowerCase()) ||
+       c.username.toLowerCase().includes(search.toLowerCase()))
+    )
+    .sort((a,b) => {
+      if (sortBy==='posts') return getPostCnt(b,selectedDate)-getPostCnt(a,selectedDate);
+      return b.subs-a.subs;
+    });
 
   return (
     <div>
-      <SectionHeader icon="📢" title="Channels" subtitle={`${channels.length} active UGC NET Telegram channels — live subscriber data`} />
-      <div style={{ display:'flex',gap:8,marginBottom:16,flexWrap:'wrap' }}>
+      <SectionHeader icon="📢" title="Channels" subtitle={`${channels.length} UGC NET Telegram channels · live subscriber counts`} />
+
+      {/* Date picker — only today/yesterday since posts API covers 48h */}
+      <div style={{ display:'flex',gap:8,marginBottom:16 }}>
         {dates.map(d=>(
-          <button key={d.key} onClick={()=>onDateChange(d.key)} style={{ padding:'5px 14px',borderRadius:20,border:'none',cursor:'pointer',fontSize:12,fontWeight:600,background:selectedDate===d.key?'#3b82f6':'#e2e8f0',color:selectedDate===d.key?'white':'#374151' }}>{d.label}</button>
+          <button key={d.key} onClick={()=>onDateChange(d.key)} style={{ padding:'6px 18px',borderRadius:20,border:'none',cursor:'pointer',fontSize:12,fontWeight:700,background:selectedDate===d.key?'#3b82f6':'#e2e8f0',color:selectedDate===d.key?'white':'#374151' }}>{d.label}</button>
         ))}
+        <div style={{ marginLeft:'auto',background:'#dcfce7',border:'1px solid #bbf7d0',borderRadius:20,padding:'4px 12px',fontSize:11,fontWeight:700,color:'#15803d' }}>● Subscribers: LIVE from Telegram</div>
       </div>
+
+      {/* Search + Sort + Subject filter */}
       <div style={{ display:'flex',gap:10,marginBottom:16,flexWrap:'wrap',alignItems:'center' }}>
-        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search channels..." style={{ padding:'7px 12px',border:'1px solid #e2e8f0',borderRadius:8,fontSize:13,outline:'none',width:200 }} />
+        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search channels…" style={{ padding:'7px 12px',border:'1px solid #e2e8f0',borderRadius:8,fontSize:13,outline:'none',width:200 }} />
         <select value={sortBy} onChange={e=>setSortBy(e.target.value)} style={{ padding:'7px 12px',border:'1px solid #e2e8f0',borderRadius:8,fontSize:13,outline:'none',cursor:'pointer' }}>
           <option value="subs">Sort: Subscribers</option>
-          <option value="rate">Sort: View Rate</option>
-          <option value="posts">Sort: Posts/wk</option>
+          <option value="posts">Sort: Posts today</option>
         </select>
-        <div style={{ display:'flex',gap:6,overflowX:'auto',maxWidth:'100%' }}>
+        <div style={{ display:'flex',gap:6,overflowX:'auto',flexWrap:'wrap' }}>
           {subjects.map(s=>(
-            <button key={s} onClick={()=>setFilterSubj(s)} style={{ padding:'5px 12px',borderRadius:20,border:'none',cursor:'pointer',fontSize:11,fontWeight:600,whiteSpace:'nowrap',background:filterSubj===s?'#0f172a':'#f1f5f9',color:filterSubj===s?'white':'#374151' }}>{s}</button>
+            <button key={s} onClick={()=>setFilterSubj(s)} style={{ padding:'4px 12px',borderRadius:20,border:'none',cursor:'pointer',fontSize:11,fontWeight:600,whiteSpace:'nowrap',background:filterSubj===s?'#0f172a':'#f1f5f9',color:filterSubj===s?'white':'#374151' }}>{s}</button>
           ))}
         </div>
       </div>
-      <div style={{ background:isToday||snapshot?'#f0fdf4':'#fff7ed',border:`1px solid ${isToday||snapshot?'#bbf7d0':'#fed7aa'}`,borderRadius:10,padding:'10px 16px',marginBottom:16,display:'flex',gap:10,alignItems:'flex-start' }}>
-        <span style={{ fontSize:16,flexShrink:0 }}>{isToday||snapshot?'ℹ️':'⚠️'}</span>
-        <div style={{ fontSize:12,color:isToday||snapshot?'#166534':'#9a3412',lineHeight:1.6 }}>
-          {isToday ? <>
-            <strong>● Subscribers:</strong> Live from Telegram Bot API.&nbsp;
-            <strong>📊 Post count:</strong> Real posts from Telegram bot updates (last ~48h).&nbsp;
-            <strong>~ View rate, avg views, forwards:</strong> Historical averages only.
-          </> : snapshot ? <>
-            <strong>📅 {selectedDate}:</strong> Showing subscriber snapshot saved on that date.&nbsp;
-            Snapshots available: {snapshotDates.slice(0,5).join(', ')}{snapshotDates.length>5?'…':''}.
-          </> : <>
-            <strong>No snapshot for {selectedDate}.</strong> Subscriber counts shown are today's live data. Snapshots save automatically on each page load.
-            Available: {snapshotDates.length>0?snapshotDates.slice(0,5).join(', '):'none yet'}.
-          </>}
-        </div>
-      </div>
+
+      {/* Channel cards */}
       <div style={{ display:'flex',flexDirection:'column',gap:10 }}>
-        {filtered.map(ch=>{
-          const variant = simulateVariation(ch, selectedDate);
-          const history = buildHistory(ch.liveSubs||ch.subs, selectedDate);
-          const isExp   = expanded === ch.username;
-          const barColor = ch.rate>=8?'#10b981':ch.rate>=6?'#3b82f6':ch.rate>=4?'#f59e0b':'#dc2626';
-          const postCnt  = postCounts?.[selectedDate]?.[ch.username.toLowerCase()] || 0;
-          const hasCounts = Object.keys(postCounts||{}).length>0;
-          const posts    = postItems?.[selectedDate]?.[ch.username.toLowerCase()] || [];
+        {filtered.map(ch => {
+          const postCnt  = getPostCnt(ch, selectedDate);
+          const posts    = getPosts(ch, selectedDate);
+          const isExp    = expanded === ch.username;
+          const breakdown= typeBreakdown(posts);
+
+          // Activity-based border: green = posted today, yellow = only yesterday, gray = silent
+          const todayPosts = getPostCnt(ch, today);
+          const yestPosts  = getPostCnt(ch, yesterday);
+          const borderColor = todayPosts>0 ? '#10b981' : yestPosts>0 ? '#f59e0b' : '#e2e8f0';
+          const activityBadge = todayPosts>0
+            ? { bg:'#dcfce7',color:'#15803d',text:`✅ ${todayPosts} posts today` }
+            : yestPosts>0
+            ? { bg:'#fef3c7',color:'#92400e',text:`⚠️ ${yestPosts} posts yesterday` }
+            : { bg:'#fee2e2',color:'#991b1b',text:'🔴 No recent posts' };
+
           return (
-            <div key={ch.username} style={{ background:'white',borderRadius:12,overflow:'hidden',boxShadow:'0 1px 4px rgba(0,0,0,0.06)',borderLeft:`4px solid ${barColor}` }}>
+            <div key={ch.username} style={{ background:'white',borderRadius:12,overflow:'hidden',boxShadow:'0 1px 4px rgba(0,0,0,0.06)',borderLeft:`4px solid ${borderColor}` }}>
+              {/* Card header */}
               <div style={{ padding:'14px 16px',cursor:'pointer' }} onClick={()=>setExpanded(isExp?null:ch.username)}>
-                <div style={{ display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8 }}>
-                  <div style={{ minWidth:0 }}>
-                    <div style={{ fontSize:14,fontWeight:700,color:'#0f172a' }}>{ch.title||ch.subject}{ch.teacher?` · ${ch.teacher}`:''}</div>
-                    <div style={{ display:'flex',gap:6,alignItems:'center',marginTop:3,flexWrap:'wrap' }}>
-                      <a href={`https://t.me/${ch.username}`} target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()} style={{ fontSize:11,color:'#3b82f6',textDecoration:'none' }}>{ch.name} ↗</a>
-                      <span style={{ background:'#dbeafe',color:'#1e40af',padding:'1px 7px',borderRadius:20,fontSize:9,fontWeight:700 }}>OWN</span>
-                      <span style={{ background:ch.subsSource==='live'?'#dcfce7':ch.subsSource==='snapshot'?'#dbeafe':'#fff7ed',color:ch.subsSource==='live'?'#15803d':ch.subsSource==='snapshot'?'#1e40af':'#9a3412',padding:'1px 7px',borderRadius:20,fontSize:9,fontWeight:700 }}>
-                        {ch.subsSource==='live'?'● LIVE':ch.subsSource==='snapshot'?`📅 ${selectedDate.slice(5)} snapshot`:`⚠️ no ${selectedDate.slice(5)} data`}
-                      </span>
-                      <span style={{ fontSize:12,fontWeight:700,color:'#0f172a' }}>{ch.subs>0?ch.subs.toLocaleString('en-IN'):'—'} subs</span>
-                      <span style={{ background:postCnt>0?'#dbeafe':'#f1f5f9',color:postCnt>0?'#1e40af':'#94a3b8',padding:'1px 7px',borderRadius:20,fontSize:9,fontWeight:700 }}>
-                        {hasCounts?`${postCnt} post${postCnt!==1?'s':''} ${isToday?'today':selectedDate.slice(5)}`:'posts: loading…'}
-                      </span>
+                <div style={{ display:'flex',justifyContent:'space-between',alignItems:'flex-start' }}>
+                  <div style={{ minWidth:0,flex:1 }}>
+                    <div style={{ fontSize:14,fontWeight:700,color:'#0f172a',marginBottom:4 }}>
+                      {ch.title||ch.subject}
+                      {ch.teacher ? <span style={{ fontWeight:400,color:'#64748b',fontSize:13 }}> · {ch.teacher}</span> : null}
+                    </div>
+                    <div style={{ display:'flex',gap:6,alignItems:'center',flexWrap:'wrap' }}>
+                      <a href={`https://t.me/${ch.username}`} target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()} style={{ fontSize:11,color:'#3b82f6',textDecoration:'none' }}>@{ch.username} ↗</a>
+                      <span style={{ background:'#dbeafe',color:'#1e40af',padding:'1px 7px',borderRadius:20,fontSize:9,fontWeight:700 }}>{ch.subject}</span>
+                      <span style={{ background:'#dcfce7',color:'#15803d',padding:'1px 7px',borderRadius:20,fontSize:9,fontWeight:700 }}>● {ch.subs.toLocaleString('en-IN')} subs</span>
+                      <span style={{ background:activityBadge.bg,color:activityBadge.color,padding:'1px 7px',borderRadius:20,fontSize:9,fontWeight:700 }}>{activityBadge.text}</span>
                     </div>
                   </div>
-                  <span style={{ color:'#94a3b8',fontSize:11,flexShrink:0,marginLeft:8 }}>{isExp?'▲':'▼'}</span>
-                </div>
-                <div style={{ display:'flex',gap:8,flexWrap:'wrap' }}>
-                  {[['View Rate~',`${variant.rate}%`],['Avg Views~',variant.avgViews>=1000?`${(variant.avgViews/1000).toFixed(1)}K`:variant.avgViews],['Fwd~',ch.avgFwd],['Joined~',`+${variant.joined}`],['Left~',`-${variant.left}`]].map(([k,v])=>(
-                    <span key={k} style={{ background:'#f8fafc',padding:'3px 9px',borderRadius:20,fontSize:11,color:'#374151' }}>{k}: <strong>{v}</strong></span>
-                  ))}
+                  <div style={{ display:'flex',flexDirection:'column',alignItems:'flex-end',gap:4,flexShrink:0,marginLeft:12 }}>
+                    <span style={{ fontSize:18,fontWeight:800,color:'#0f172a' }}>{ch.subs.toLocaleString('en-IN')}</span>
+                    <span style={{ fontSize:10,color:'#94a3b8' }}>{isExp?'▲ collapse':'▼ expand'}</span>
+                  </div>
                 </div>
               </div>
+
+              {/* Expanded panel */}
               {isExp && (
-                <div style={{ padding:'14px 16px',borderTop:'1px solid #f1f5f9',background:'#f8fafc' }}>
-                  <div style={{ marginBottom:14 }}>
-                    <div style={{ fontSize:10,fontWeight:700,color:'#64748b',letterSpacing:'0.05em',marginBottom:6 }}>7-DAY TREND (SUBS + VIEW RATE)</div>
-                    <MiniDualChart history={history} color={barColor} />
-                  </div>
-                  {posts.length>0&&(
+                <div style={{ borderTop:'1px solid #f1f5f9',background:'#f8fafc',padding:'14px 16px' }}>
+
+                  {/* Posts for selected date */}
+                  {posts.length > 0 ? (
                     <div style={{ marginBottom:14 }}>
-                      <div style={{ fontSize:10,fontWeight:700,color:'#64748b',marginBottom:6 }}>ACTUAL POSTS — {selectedDate} (from Telegram)</div>
+                      <div style={{ fontSize:10,fontWeight:700,color:'#64748b',letterSpacing:'0.05em',marginBottom:8 }}>
+                        POSTS — {selectedDate===today?'TODAY':selectedDate===yesterday?'YESTERDAY':selectedDate} (real from Telegram · {posts.length} total)
+                      </div>
                       <div style={{ display:'flex',flexDirection:'column',gap:5 }}>
-                        {posts.map((p,i)=>(
-                          <div key={i} style={{ display:'flex',gap:8,alignItems:'flex-start',background:'#f8fafc',borderRadius:8,padding:'7px 10px' }}>
-                            <span style={{ fontSize:10,color:'#94a3b8',whiteSpace:'nowrap',flexShrink:0,marginTop:1 }}>{p.time}</span>
-                            <span style={{ background:typeColor(p.type)+'22',color:typeColor(p.type),fontSize:9,fontWeight:700,padding:'1px 6px',borderRadius:10,whiteSpace:'nowrap',flexShrink:0 }}>{typeIcon(p.type)} {p.type}</span>
-                            <span style={{ fontSize:11,color:'#374151',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' }}>{p.preview}</span>
+                        {posts.map((p,i) => (
+                          <div key={i} style={{ display:'flex',gap:8,alignItems:'flex-start',background:'white',borderRadius:8,padding:'7px 10px',boxShadow:'0 1px 2px rgba(0,0,0,0.04)' }}>
+                            <span style={{ fontSize:10,color:'#94a3b8',whiteSpace:'nowrap',flexShrink:0,marginTop:1,minWidth:55 }}>{p.time}</span>
+                            <span style={{ background:typeColor(p.type)+'22',color:typeColor(p.type),fontSize:9,fontWeight:700,padding:'2px 7px',borderRadius:10,whiteSpace:'nowrap',flexShrink:0 }}>{typeIcon(p.type)} {p.type}</span>
+                            <span style={{ fontSize:11,color:'#374151',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' }}>{p.preview||'(no preview)'}</span>
                           </div>
                         ))}
                       </div>
                     </div>
-                  )}
-                  {ch.contentTypes?.length>0&&(
-                    <div style={{ marginBottom:14 }}>
-                      <div style={{ display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6 }}>
-                        <div style={{ fontSize:10,fontWeight:700,color:'#64748b',letterSpacing:'0.05em' }}>CONTENT MIX ~ AVG PERFORMANCE</div>
-                        <div style={{ fontSize:9,color:'#f59e0b',fontWeight:600 }}>~ Historical baselines only</div>
-                      </div>
-                      <table style={{ width:'100%',borderCollapse:'collapse',fontSize:12 }}>
-                        <thead><tr style={{ background:'#f1f5f9' }}>
-                          {['Content Type','Avg Views~','Rate~','Fwd~'].map(h=><th key={h} style={{ padding:'6px 10px',textAlign:h==='Content Type'?'left':'right',fontWeight:600,color:'#64748b',fontSize:11,borderBottom:'1px solid #e2e8f0' }}>{h}</th>)}
-                        </tr></thead>
-                        <tbody>
-                          {ch.contentTypes.map((ct,i)=>(
-                            <tr key={i} style={{ borderBottom:i<ch.contentTypes.length-1?'1px solid #f1f5f9':'none' }}>
-                              <td style={{ padding:'6px 10px',fontWeight:500,color:'#374151' }}><span style={{ display:'inline-flex',alignItems:'center',gap:5 }}><span>{typeIcon(ct.type)}</span>{normalizeType(ct.type)}</span></td>
-                              <td style={{ padding:'6px 10px',textAlign:'right' }}>{ct.avgViews>=1000?`${(ct.avgViews/1000).toFixed(1)}K`:ct.avgViews}</td>
-                              <td style={{ padding:'6px 10px',textAlign:'right' }}><span style={{ fontWeight:700,color:ct.rate>8?'#10b981':ct.rate>5?'#3b82f6':'#f59e0b' }}>{ct.rate}%</span></td>
-                              <td style={{ padding:'6px 10px',textAlign:'right',color:'#374151' }}>{ct.fwd}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                  ) : (
+                    <div style={{ background:'#fff7ed',border:'1px solid #fed7aa',borderRadius:8,padding:'10px 14px',marginBottom:14,fontSize:12,color:'#9a3412' }}>
+                      ⚠️ No posts found for {selectedDate===today?'today':selectedDate===yesterday?'yesterday':selectedDate} in the Telegram bot update window.
                     </div>
                   )}
-                  {ch.bestHours?.length>0&&(
-                    <div style={{ display:'flex',gap:6,alignItems:'center',flexWrap:'wrap' }}>
-                      <span style={{ fontSize:10,fontWeight:700,color:'#64748b' }}>BEST POSTING HOURS:</span>
-                      {ch.bestHours.map(h=><span key={h} style={{ background:'#ede9fe',color:'#5b21b6',padding:'2px 8px',borderRadius:12,fontSize:10,fontWeight:600 }}>{h}</span>)}
+
+                  {/* Content type breakdown from real posts */}
+                  {breakdown.length > 0 && (
+                    <div style={{ marginBottom:14 }}>
+                      <div style={{ fontSize:10,fontWeight:700,color:'#64748b',letterSpacing:'0.05em',marginBottom:8 }}>CONTENT TYPE BREAKDOWN (from real posts)</div>
+                      <div style={{ display:'flex',gap:6,flexWrap:'wrap' }}>
+                        {breakdown.map(([type,count]) => (
+                          <span key={type} style={{ background:typeColor(type)+'18',color:typeColor(type),border:`1px solid ${typeColor(type)}44`,padding:'4px 10px',borderRadius:20,fontSize:11,fontWeight:700 }}>
+                            {typeIcon(type)} {type} · {count}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Channel description from Telegram */}
+                  {ch.description && (
+                    <div style={{ background:'white',borderRadius:8,padding:'10px 12px',fontSize:11,color:'#64748b',lineHeight:1.6,borderLeft:'3px solid #e2e8f0' }}>
+                      <div style={{ fontSize:10,fontWeight:700,color:'#94a3b8',marginBottom:4 }}>CHANNEL DESCRIPTION (from Telegram)</div>
+                      {ch.description.slice(0,200)}{ch.description.length>200?'…':''}
                     </div>
                   )}
                 </div>
@@ -1563,7 +1556,7 @@ export default function Dashboard() {
     const snapSubs = snapshot?.[ch.username.toLowerCase()];
     const subs     = isToday ? liveSubs : snapSubs !== undefined ? snapSubs : liveSubs;
     const subsSource = isToday ? 'live' : snapSubs !== undefined ? 'snapshot' : 'live-proxy';
-    return { ...ch, subs, liveSubs, subsSource, title: live?.title||ch.subject };
+    return { ...ch, subs, liveSubs, subsSource, title: live?.title||ch.subject, description: live?.description||'' };
   });
 
   const totalSubs = channels.reduce((a,c)=>a+c.subs,0);
@@ -1584,7 +1577,7 @@ export default function Dashboard() {
       <Sidebar active={section} onNav={setSection} totalSubs={totalSubs} lastFetched={lastFetched} />
       <main style={{ flex:1,padding:'28px 32px',overflowY:'auto',minWidth:0 }}>
         {section==='overview'    && <OverviewSection     channels={channels} />}
-        {section==='channels'    && <ChannelsSection     channels={channels} selectedDate={selDate} onDateChange={setSelDate} postCounts={postCounts} postItems={postItems} postCountsNote={postNote} isToday={isToday} snapshot={snapshot} snapshotDates={snapshotDates} />}
+        {section==='channels'    && <ChannelsSection     channels={channels} selectedDate={selDate} onDateChange={setSelDate} postCounts={postCounts} postItems={postItems} />}
         {section==='competitive' && <CompetitiveSection  channels={channels} competitorData={compData} competitorLoading={compLoading} />}
         {section==='insights'    && <InsightsSection     channels={channels} competitorData={compData} selectedDate={selDate} />}
         {section==='calendar'    && <ContentCalendarSection channels={channels} />}
