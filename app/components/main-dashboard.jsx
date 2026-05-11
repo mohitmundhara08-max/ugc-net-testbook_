@@ -214,86 +214,264 @@ function MetricCard({ label, value, sub, color='#3b82f6', trend, sparkData }) {
 
 
 
-// ── Overview section ────────────────────────────────────────────────────────
-function OverviewSection({ channels }) {
+// ── Pulse card (Overview KPIs — real data only) ────────────────────────────
+function PulseCard({ label, value, sub, delta, tag, color }) {
+  const tagStyles = {
+    LIVE:     { bg:'#dcfce7', fg:'#15803d' },
+    ALERT:    { bg:'#fef3c7', fg:'#b45309' },
+    SNAPSHOT: { bg:'#dbeafe', fg:'#1d4ed8' },
+    OK:       { bg:'#e0f2fe', fg:'#0369a1' },
+  };
+  const t = tagStyles[tag] || tagStyles.LIVE;
+  const deltaColor = delta == null ? '#64748b' : delta > 0 ? '#10b981' : delta < 0 ? '#dc2626' : '#64748b';
+  return (
+    <div style={{ background:'white',borderRadius:12,padding:'14px 16px',boxShadow:'0 1px 4px rgba(0,0,0,0.06)',borderTop:`3px solid ${color}` }}>
+      <div style={{ display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8 }}>
+        <div style={{ fontSize:10,fontWeight:700,color:'#94a3b8',letterSpacing:'0.05em' }}>{label}</div>
+        <span style={{ fontSize:9,fontWeight:700,padding:'2px 6px',borderRadius:4,background:t.bg,color:t.fg }}>{tag}</span>
+      </div>
+      <div style={{ fontSize:22,fontWeight:800,color:'#0f172a',marginBottom:4,lineHeight:1.1 }}>{value}</div>
+      {sub && <div style={{ fontSize:11,color:deltaColor,fontWeight:500 }}>{sub}</div>}
+    </div>
+  );
+}
+
+// ── Overview section — operator's morning briefing (real data only) ────────
+function OverviewSection({ channels, postCounts = {}, postItems = {}, lastFetched, onNavigate }) {
+  // Date keys
+  const today      = new Date().toISOString().slice(0,10);
+  const yesterday  = new Date(Date.now() - 86400000).toISOString().slice(0,10);
+  const sevenAgo   = new Date(Date.now() - 7*86400000).toISOString().slice(0,10);
+  const todayLabel = new Date().toLocaleDateString('en-IN',{ weekday:'long', day:'numeric', month:'long' });
+
+  // Real subscriber metrics — from /api/channels (live Bot API)
   const totalSubs = channels.reduce((a,c)=>a+c.subs,0);
-  const totalPosts = channels.reduce((a,c)=>a+c.posts,0);
-  const avgRate   = channels.length ? parseFloat((channels.reduce((a,c)=>a+c.rate,0)/channels.length).toFixed(1)) : 0;
-  const netGrowth = channels.reduce((a,c)=>a+c.joined-c.left,0);
-  const top5      = [...channels].sort((a,b)=>b.subs-a.subs).slice(0,5);
-  const healthy   = channels.filter(c=>c.rate>=6).length;
-  const sparkData = Array.from({length:7},(_,i)=>Math.round(totalSubs*(1-(6-i)*0.0008)));
+
+  // Subscriber deltas — require localStorage snapshots; null if no snapshot yet
+  const ySnap = loadSnapshot(yesterday);
+  const wSnap = loadSnapshot(sevenAgo);
+  const subsYesterday = ySnap ? Object.values(ySnap).reduce((a,v)=>a+(Number(v)||0),0) : null;
+  const subsWeekAgo   = wSnap ? Object.values(wSnap).reduce((a,v)=>a+(Number(v)||0),0) : null;
+  const delta1d = subsYesterday !== null ? totalSubs - subsYesterday : null;
+  const delta7d = subsWeekAgo   !== null ? totalSubs - subsWeekAgo   : null;
+
+  // Real post metrics — from /api/posts (Bot API getUpdates, last 48h)
+  const todayCounts     = postCounts[today]     || {};
+  const yesterdayCounts = postCounts[yesterday] || {};
+  const postsToday      = Object.values(todayCounts).reduce((a,v)=>a+v,0);
+  const postsYesterday  = Object.values(yesterdayCounts).reduce((a,v)=>a+v,0);
+
+  const activeToday = channels.filter(c => (todayCounts[c.username.toLowerCase()] || 0) > 0).length;
+  const idleToday   = channels.length - activeToday;
+
+  // "Quiet" = no posts in either today or yesterday (full 48h Bot API window)
+  const silentChannels = channels.filter(c => {
+    const u = c.username.toLowerCase();
+    return (todayCounts[u] || 0) === 0 && (yesterdayCounts[u] || 0) === 0;
+  });
+
+  // Per-channel posting tiles (sorted by activity desc, then subs desc)
+  const channelTiles = channels.map(c => {
+    const u = c.username.toLowerCase();
+    return { ...c, postsToday: todayCounts[u] || 0, posts48h: (todayCounts[u]||0) + (yesterdayCounts[u]||0) };
+  }).sort((a,b)=> b.postsToday - a.postsToday || b.subs - a.subs);
+
+  const topActiveToday = [...channelTiles].filter(c=>c.postsToday>0).slice(0,5);
+
+  // Today's post-type breakdown (real, from postItems)
+  const typeBreakdown = {};
+  const todayItems = postItems[today] || {};
+  Object.values(todayItems).forEach(arr => arr.forEach(p => {
+    const key = normalizeType(p.type);
+    typeBreakdown[key] = (typeBreakdown[key] || 0) + 1;
+  }));
+  const typeEntries  = Object.entries(typeBreakdown).sort((a,b)=>b[1]-a[1]);
+  const maxTypeCount = typeEntries.length ? typeEntries[0][1] : 0;
+
+  // Format helpers
+  const fmtDelta = (d) => d == null ? '—' : `${d >= 0 ? '+' : ''}${d.toLocaleString('en-IN')}`;
 
   return (
     <div>
-      <SectionHeader icon="📊" title="Overview" subtitle="Live snapshot across all 25 UGC NET channels" />
-      <div style={{ background:'#f0f9ff',border:'1px solid #bae6fd',borderRadius:10,padding:'10px 16px',marginBottom:20,display:'flex',gap:10,alignItems:'flex-start' }}>
-        <span style={{ fontSize:16,flexShrink:0 }}>ℹ️</span>
-        <div style={{ fontSize:12,color:'#0369a1',lineHeight:1.7 }}>
-          <strong>What's live vs estimated:</strong><br/>
-          <span style={{ color:'#10b981',fontWeight:700 }}>● LIVE</span> — Subscriber counts for all 25 channels, fetched from Telegram Bot API on each page load.<br/>
-          <span style={{ color:'#f59e0b',fontWeight:700 }}>~ ESTIMATED</span> — View rates, avg views, forwards, joined/left, post counts are <strong>historical averages from static data</strong> — not real-time.
-        </div>
+      <SectionHeader
+        icon="📊"
+        title="Overview"
+        subtitle={`Your morning briefing · ${todayLabel}${lastFetched ? ` · Last sync ${lastFetched}` : ''}`}
+      />
+
+      {/* Quick actions row */}
+      <div style={{ display:'flex',gap:8,marginBottom:16,flexWrap:'wrap' }}>
+        <button onClick={()=>window.location.reload()} style={{ background:'#0f172a',color:'white',border:'none',borderRadius:8,padding:'8px 14px',fontSize:12,fontWeight:600,cursor:'pointer' }}>↻ Refresh live data</button>
+        <button onClick={()=>onNavigate?.('calendar')}    style={{ background:'white',color:'#0f172a',border:'1px solid #e2e8f0',borderRadius:8,padding:'8px 14px',fontSize:12,fontWeight:600,cursor:'pointer' }}>📅 Generate today's calendar</button>
+        <button onClick={()=>onNavigate?.('channels')}    style={{ background:'white',color:'#0f172a',border:'1px solid #e2e8f0',borderRadius:8,padding:'8px 14px',fontSize:12,fontWeight:600,cursor:'pointer' }}>📢 Inspect channels</button>
+        <button onClick={()=>onNavigate?.('insights')}    style={{ background:'white',color:'#0f172a',border:'1px solid #e2e8f0',borderRadius:8,padding:'8px 14px',fontSize:12,fontWeight:600,cursor:'pointer' }}>💡 Growth insights</button>
       </div>
-      <div style={{ display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(160px,1fr))',gap:14,marginBottom:28 }}>
-        <MetricCard label="TOTAL SUBSCRIBERS ● LIVE" value={totalSubs.toLocaleString('en-IN')} sub="Fetched from Telegram now" color="#3b82f6" sparkData={sparkData} />
-        <MetricCard label="NET GROWTH ~ EST" value={`~+${netGrowth}`} sub="Historical avg · not today's count" color="#10b981" />
-        <MetricCard label="AVG VIEW RATE ~ EST" value={`~${avgRate}%`} sub="Historical average" color="#8b5cf6" />
-        <MetricCard label="TOTAL POSTS/WK ~ EST" value={totalPosts} sub="Weekly avg across channels" color="#f59e0b" />
-        <MetricCard label="HEALTHY CHANNELS ● LIVE" value={`${healthy}/${channels.length}`} sub="Based on live sub counts" color="#06b6d4" />
+
+      {/* PULSE STRIP — only real data, never fabricated */}
+      <div style={{ display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))',gap:14,marginBottom:20 }}>
+        <PulseCard
+          label="TOTAL SUBSCRIBERS"
+          value={totalSubs.toLocaleString('en-IN')}
+          sub={delta1d !== null ? `${fmtDelta(delta1d)} vs yesterday` : 'No snapshot yet — keep visiting daily'}
+          delta={delta1d}
+          tag="LIVE"
+          color="#3b82f6"
+        />
+        <PulseCard
+          label="POSTS TODAY"
+          value={postsToday}
+          sub={`${postsYesterday} yesterday · ${fmtDelta(postsToday - postsYesterday)}`}
+          delta={postsToday - postsYesterday}
+          tag="LIVE"
+          color="#10b981"
+        />
+        <PulseCard
+          label="ACTIVE CHANNELS"
+          value={`${activeToday} / ${channels.length}`}
+          sub={`${idleToday} haven't posted today`}
+          tag="LIVE"
+          color="#8b5cf6"
+        />
+        <PulseCard
+          label="QUIET IN 48H"
+          value={silentChannels.length}
+          sub={silentChannels.length === 0 ? 'All channels publishing' : 'Needs your nudge'}
+          tag={silentChannels.length === 0 ? 'OK' : 'ALERT'}
+          color={silentChannels.length === 0 ? '#10b981' : '#f59e0b'}
+        />
+        <PulseCard
+          label="7-DAY GROWTH"
+          value={delta7d !== null ? fmtDelta(delta7d) : '—'}
+          sub={delta7d !== null ? 'vs 7 days ago (snapshot)' : 'Building history — check back daily'}
+          delta={delta7d}
+          tag="SNAPSHOT"
+          color="#06b6d4"
+        />
       </div>
-      <div style={{ display:'grid',gridTemplateColumns:'1fr 1fr',gap:16 }}>
-        <div style={{ background:'white',borderRadius:12,padding:'18px 20px',boxShadow:'0 1px 4px rgba(0,0,0,0.06)' }}>
-          <div style={{ fontSize:13,fontWeight:700,color:'#0f172a',marginBottom:14 }}>🏆 Top Channels by Subscribers</div>
-          {top5.map((ch,i)=>(
-            <div key={ch.username} style={{ display:'flex',alignItems:'center',gap:10,marginBottom:10 }}>
-              <span style={{ fontSize:12,fontWeight:700,color:'#3b82f6',width:16 }}>#{i+1}</span>
-              <div style={{ flex:1,minWidth:0 }}>
-                <div style={{ fontSize:12,fontWeight:600,color:'#0f172a',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' }}>{ch.title||ch.subject}</div>
-                <div style={{ fontSize:10,color:'#94a3b8' }}>{ch.subject}</div>
-              </div>
-              <div style={{ textAlign:'right' }}>
-                <div style={{ fontSize:13,fontWeight:700,color:'#0f172a' }}>{ch.subs.toLocaleString('en-IN')}</div>
-                <div style={{ fontSize:9,color:'#10b981' }}>{ch.rate}% rate</div>
-              </div>
-            </div>
-          ))}
+
+      {/* TODAY'S POSTING STATUS — 25-channel grid */}
+      <div style={{ background:'white',borderRadius:12,padding:'18px 20px',boxShadow:'0 1px 4px rgba(0,0,0,0.06)',marginBottom:16 }}>
+        <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14,flexWrap:'wrap',gap:8 }}>
+          <div style={{ fontSize:13,fontWeight:700,color:'#0f172a' }}>📡 Today's Posting Status — all 25 channels</div>
+          <div style={{ fontSize:11,color:'#64748b',display:'flex',gap:14 }}>
+            <span><span style={{ color:'#10b981' }}>●</span> 3+ posts</span>
+            <span><span style={{ color:'#f59e0b' }}>●</span> 1–2 posts</span>
+            <span><span style={{ color:'#dc2626' }}>●</span> none</span>
+          </div>
         </div>
-        <div style={{ background:'white',borderRadius:12,padding:'18px 20px',boxShadow:'0 1px 4px rgba(0,0,0,0.06)' }}>
-          <div style={{ fontSize:13,fontWeight:700,color:'#0f172a',marginBottom:14 }}>⚠️ Channels Needing Attention</div>
-          {channels.filter(c=>c.rate<5||c.posts<3).slice(0,5).map(ch=>(
-            <div key={ch.username} style={{ display:'flex',alignItems:'center',gap:10,marginBottom:10 }}>
-              <span style={{ fontSize:14 }}>{ch.rate<4?'🔴':'🟡'}</span>
-              <div style={{ flex:1,minWidth:0 }}>
-                <div style={{ fontSize:12,fontWeight:600,color:'#0f172a',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' }}>{ch.title||ch.subject}</div>
-                <div style={{ fontSize:10,color:'#94a3b8' }}>{ch.subject}</div>
-              </div>
-              <div style={{ textAlign:'right' }}>
-                <div style={{ fontSize:11,fontWeight:600,color:ch.rate<4?'#dc2626':'#f59e0b' }}>{ch.rate}% rate</div>
-                <div style={{ fontSize:9,color:'#94a3b8' }}>{ch.posts} posts/wk</div>
-              </div>
-            </div>
-          ))}
-          {channels.filter(c=>c.rate<5||c.posts<3).length===0 && <div style={{ color:'#10b981',fontSize:13 }}>✅ All channels are healthy!</div>}
-        </div>
-      </div>
-      <div style={{ background:'white',borderRadius:12,padding:'18px 20px',boxShadow:'0 1px 4px rgba(0,0,0,0.06)',marginTop:16 }}>
-        <div style={{ fontSize:13,fontWeight:700,color:'#0f172a',marginBottom:14 }}>📈 Subscriber Distribution by Subject</div>
-        <div style={{ display:'flex',flexDirection:'column',gap:8 }}>
-          {[...channels].sort((a,b)=>b.subs-a.subs).map(ch=>{
-            const pct = Math.round(ch.subs/totalSubs*100);
+        <div style={{ display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(180px,1fr))',gap:10 }}>
+          {channelTiles.map(c => {
+            const status = c.postsToday >= 3 ? 'green' : c.postsToday >= 1 ? 'yellow' : 'red';
+            const color  = status === 'green' ? '#10b981' : status === 'yellow' ? '#f59e0b' : '#dc2626';
+            const bg     = status === 'green' ? '#f0fdf4' : status === 'yellow' ? '#fffbeb' : '#fef2f2';
             return (
-              <div key={ch.username} style={{ display:'flex',alignItems:'center',gap:10 }}>
-                <div style={{ width:140,fontSize:11,color:'#374151',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',flexShrink:0 }}>{ch.title||ch.subject}</div>
-                <div style={{ flex:1,background:'#f1f5f9',borderRadius:4,height:8,overflow:'hidden' }}>
-                  <div style={{ width:`${pct}%`,height:'100%',background:ch.rate>=7?'#3b82f6':ch.rate>=5?'#f59e0b':'#dc2626',borderRadius:4 }} />
+              <div
+                key={c.username}
+                onClick={()=>onNavigate?.('channels')}
+                title={`@${c.username} · click to inspect`}
+                style={{ background:bg,border:`1px solid ${color}33`,borderRadius:8,padding:'10px 12px',cursor:'pointer',transition:'transform .15s ease' }}
+                onMouseEnter={e=>{ e.currentTarget.style.transform='translateY(-1px)'; e.currentTarget.style.boxShadow='0 2px 6px rgba(0,0,0,0.08)'; }}
+                onMouseLeave={e=>{ e.currentTarget.style.transform='none'; e.currentTarget.style.boxShadow='none'; }}
+              >
+                <div style={{ display:'flex',alignItems:'center',gap:6,marginBottom:6 }}>
+                  <span style={{ width:7,height:7,borderRadius:'50%',background:color,flexShrink:0 }} />
+                  <div style={{ fontSize:11,fontWeight:600,color:'#0f172a',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' }}>
+                    {c.subject}{c.teacher?` · ${c.teacher}`:''}
+                  </div>
                 </div>
-                <div style={{ width:70,fontSize:11,color:'#374151',textAlign:'right',flexShrink:0 }}>{ch.subs.toLocaleString('en-IN')} ({pct}%)</div>
+                <div style={{ display:'flex',alignItems:'baseline',justifyContent:'space-between' }}>
+                  <span style={{ fontSize:18,fontWeight:800,color }}>{c.postsToday}</span>
+                  <span style={{ fontSize:10,color:'#64748b' }}>{c.subs.toLocaleString('en-IN')} subs</span>
+                </div>
               </div>
             );
           })}
         </div>
       </div>
+
+      {/* TWO-COLUMN: Most Active vs Quiet */}
+      <div style={{ display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:16 }}>
+        <div style={{ background:'white',borderRadius:12,padding:'18px 20px',boxShadow:'0 1px 4px rgba(0,0,0,0.06)' }}>
+          <div style={{ fontSize:13,fontWeight:700,color:'#0f172a',marginBottom:14 }}>🔥 Most Active Today</div>
+          {topActiveToday.length === 0 ? (
+            <div style={{ color:'#94a3b8',fontSize:13 }}>No posts published today yet. {postsYesterday > 0 ? `${postsYesterday} posts went out yesterday.` : ''}</div>
+          ) : topActiveToday.map((c,i)=>(
+            <div key={c.username} onClick={()=>onNavigate?.('channels')} style={{ display:'flex',alignItems:'center',gap:10,marginBottom:10,cursor:'pointer' }}>
+              <span style={{ fontSize:12,fontWeight:700,color:'#10b981',width:16 }}>#{i+1}</span>
+              <div style={{ flex:1,minWidth:0 }}>
+                <div style={{ fontSize:12,fontWeight:600,color:'#0f172a',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' }}>{c.subject}{c.teacher?` · ${c.teacher}`:''}</div>
+                <div style={{ fontSize:10,color:'#94a3b8' }}>@{c.username}</div>
+              </div>
+              <div style={{ textAlign:'right' }}>
+                <div style={{ fontSize:13,fontWeight:700,color:'#0f172a' }}>{c.postsToday} {c.postsToday===1?'post':'posts'}</div>
+                <div style={{ fontSize:9,color:'#94a3b8' }}>{c.subs.toLocaleString('en-IN')} subs</div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ background:'white',borderRadius:12,padding:'18px 20px',boxShadow:'0 1px 4px rgba(0,0,0,0.06)' }}>
+          <div style={{ fontSize:13,fontWeight:700,color:'#0f172a',marginBottom:14 }}>⚠️ Quiet in Last 48h</div>
+          {silentChannels.length === 0 ? (
+            <div style={{ color:'#10b981',fontSize:13 }}>✅ Every channel posted in the last 48 hours.</div>
+          ) : (
+            <>
+              {silentChannels.slice(0,5).map(c=>(
+                <div key={c.username} onClick={()=>onNavigate?.('channels')} style={{ display:'flex',alignItems:'center',gap:10,marginBottom:10,cursor:'pointer' }}>
+                  <span style={{ fontSize:14 }}>🔴</span>
+                  <div style={{ flex:1,minWidth:0 }}>
+                    <div style={{ fontSize:12,fontWeight:600,color:'#0f172a',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' }}>{c.subject}{c.teacher?` · ${c.teacher}`:''}</div>
+                    <div style={{ fontSize:10,color:'#94a3b8' }}>@{c.username}</div>
+                  </div>
+                  <div style={{ textAlign:'right' }}>
+                    <div style={{ fontSize:11,fontWeight:600,color:'#dc2626' }}>0 posts / 48h</div>
+                    <div style={{ fontSize:9,color:'#94a3b8' }}>{c.subs.toLocaleString('en-IN')} subs</div>
+                  </div>
+                </div>
+              ))}
+              {silentChannels.length > 5 && <div style={{ fontSize:11,color:'#64748b',marginTop:8 }}>+ {silentChannels.length - 5} more quiet channels — see Channels section</div>}
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* TODAY'S CONTENT MIX */}
+      <div style={{ background:'white',borderRadius:12,padding:'18px 20px',boxShadow:'0 1px 4px rgba(0,0,0,0.06)',marginBottom:16 }}>
+        <div style={{ fontSize:13,fontWeight:700,color:'#0f172a',marginBottom:14 }}>📝 Today's Content Mix — {postsToday} posts across {activeToday} channels</div>
+        {typeEntries.length === 0 ? (
+          <div style={{ color:'#94a3b8',fontSize:13 }}>No posts published today yet. <button onClick={()=>onNavigate?.('calendar')} style={{ background:'none',border:'none',color:'#3b82f6',fontWeight:600,cursor:'pointer',padding:0,fontSize:13 }}>Generate today's plan →</button></div>
+        ) : (
+          <div style={{ display:'flex',flexDirection:'column',gap:8 }}>
+            {typeEntries.map(([t,n])=>{
+              const pct = Math.round(n/maxTypeCount*100);
+              const color = TYPE_COLOR[t] || '#64748b';
+              const icon  = TYPE_ICON[t]  || '📌';
+              return (
+                <div key={t} style={{ display:'flex',alignItems:'center',gap:10 }}>
+                  <div style={{ width:160,fontSize:11,color:'#374151',flexShrink:0,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis' }}>{icon} {t}</div>
+                  <div style={{ flex:1,background:'#f1f5f9',borderRadius:4,height:8,overflow:'hidden' }}>
+                    <div style={{ width:`${pct}%`,height:'100%',background:color,borderRadius:4 }} />
+                  </div>
+                  <div style={{ width:60,fontSize:11,fontWeight:600,color:'#374151',textAlign:'right',flexShrink:0 }}>{n} {n===1?'post':'posts'}</div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* HONEST GAP CALLOUT */}
+      <details style={{ background:'#f8fafc',border:'1px solid #e2e8f0',borderRadius:10,padding:'12px 16px' }}>
+        <summary style={{ fontSize:12,fontWeight:600,color:'#475569',cursor:'pointer',userSelect:'none' }}>
+          🔎 What's not on this dashboard and why
+        </summary>
+        <div style={{ fontSize:11,color:'#64748b',lineHeight:1.7,marginTop:10 }}>
+          <strong>What Telegram Bot API gives us:</strong> live subscriber counts, post content, post timestamps. That's it.<br/>
+          <strong>What's not possible:</strong> per-post view counts, forwards, engagement rate, joined/left counts — Telegram does not expose these to bots. Capturing them would require an MTProto user-bot integration.<br/>
+          <strong>How subscriber deltas work:</strong> every page load saves a local snapshot of all 25 sub counts. Visit daily to build history; 7-day delta needs ≥7 days of visits.<br/>
+          <strong>Idle alert window:</strong> 48 hours — that's how far back <code>getUpdates</code> can practically look. Older history would need a daily cron storing posts to a DB.
+        </div>
+      </details>
     </div>
   );
 }
@@ -1576,7 +1754,7 @@ export default function Dashboard() {
       <style>{`@keyframes spin{to{transform:rotate(360deg)}} * { box-sizing: border-box; }`}</style>
       <Sidebar active={section} onNav={setSection} totalSubs={totalSubs} lastFetched={lastFetched} />
       <main style={{ flex:1,padding:'28px 32px',overflowY:'auto',minWidth:0 }}>
-        {section==='overview'    && <OverviewSection     channels={channels} />}
+        {section==='overview'    && <OverviewSection     channels={channels} postCounts={postCounts} postItems={postItems} lastFetched={lastFetched} onNavigate={setSection} />}
         {section==='channels'    && <ChannelsSection     channels={channels} selectedDate={selDate} onDateChange={setSelDate} postCounts={postCounts} postItems={postItems} />}
         {section==='competitive' && <CompetitiveSection  channels={channels} competitorData={compData} competitorLoading={compLoading} />}
         {section==='insights'    && <InsightsSection     channels={channels} competitorData={compData} selectedDate={selDate} />}
