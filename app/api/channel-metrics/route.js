@@ -31,7 +31,7 @@ export async function GET(request) {
   }
 
   try {
-    const [postsRes, metaRes, snapsRes, dataFreshness] = await Promise.all([
+    const [postsRes, metaRes, snapsRes, deltasRes, dataFreshness] = await Promise.all([
       sb.rpc('tg_channel_metrics_v1', { from_ts: from, to_ts: to }),
       sb.from('tg_channel_meta_snapshots')
         .select('chat_username, subscribers, notifications_enabled_pct, notifications_enabled_count, captured_at, admins_count, kicked_count, banned_count, pinned_msg_id, can_view_stats, invite_link, title, description, slowmode_seconds, is_verified')
@@ -41,14 +41,22 @@ export async function GET(request) {
         .gte('snapshot_date', from.slice(0, 10))
         .lte('snapshot_date', to.slice(0, 10))
         .order('snapshot_date', { ascending: true }),
+      sb.rpc('tg_channel_subs_deltas_v1', { from_ts: from, to_ts: to }),
       sb.from('tg_posts').select('created_at').order('created_at', { ascending: false }).limit(1).maybeSingle(),
     ]);
 
-    if (postsRes.error) throw new Error('rpc: ' + postsRes.error.message);
-    if (metaRes.error)  throw new Error('meta: ' + metaRes.error.message);
-    if (snapsRes.error) throw new Error('snaps: ' + snapsRes.error.message);
+    if (postsRes.error)  throw new Error('rpc: ' + postsRes.error.message);
+    if (metaRes.error)   throw new Error('meta: ' + metaRes.error.message);
+    if (snapsRes.error)  throw new Error('snaps: ' + snapsRes.error.message);
+    if (deltasRes.error) throw new Error('deltas: ' + deltasRes.error.message);
 
     const postMetrics = postsRes.data || [];
+
+    // Index deltas by channel
+    const deltasByChannel = {};
+    for (const d of (deltasRes.data || [])) {
+      deltasByChannel[d.chat_username.toLowerCase()] = d;
+    }
 
     // Latest meta per channel (results sorted DESC, take first per channel)
     const latestMeta = {};
@@ -79,11 +87,9 @@ export async function GET(request) {
     const channels = Array.from(allChannels).map((u) => {
       const m   = latestMeta[u] || {};
       const a   = aggByChannel[u] || {};
+      const d   = deltasByChannel[u] || {};
       const startSubs   = startSubsByChannel[u];
       const currentSubs = m.subscribers ?? null;
-      const subsDelta   = (currentSubs !== null && startSubs !== undefined && startSubs !== null)
-        ? currentSubs - startSubs
-        : null;
 
       const totalEng       = (a.total_forwards || 0) + (a.total_reactions || 0) + (a.total_replies || 0);
       const engagementRate = a.total_views ? (totalEng / Number(a.total_views)) * 100 : null;
@@ -108,8 +114,6 @@ export async function GET(request) {
 
         // Current snapshot
         subscribers:         currentSubs,
-        subsDelta,
-        startSubs:           startSubs ?? null,
         notifPct:            m.notifications_enabled_pct,
         notifOnCount:        m.notifications_enabled_count,
         adminsCount:         m.admins_count,
@@ -118,6 +122,14 @@ export async function GET(request) {
         pinnedMsgId:         m.pinned_msg_id,
         canViewStats:        m.can_view_stats,
         metaCapturedAt:      m.captured_at,
+
+        // Subs deltas (from new RPC)
+        subsGained:          d.subs_gained ?? null,
+        subsLost:            d.subs_lost ?? null,
+        subsNet:             d.subs_net ?? null,
+        subsDataPoints:      d.data_points ?? 0,
+        startSubs:           d.start_subs ?? (startSubs ?? null),
+        endSubs:             d.end_subs ?? null,
 
         // Range aggregates
         posts:               a.posts ?? 0,
