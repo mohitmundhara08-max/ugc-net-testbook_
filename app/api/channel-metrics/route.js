@@ -31,7 +31,7 @@ export async function GET(request) {
   }
 
   try {
-    const [postsRes, metaRes, snapsRes, deltasRes, dataFreshness] = await Promise.all([
+    const [postsRes, metaRes, snapsRes, followersRes, growthRes, dataFreshness] = await Promise.all([
       sb.rpc('tg_channel_metrics_v1', { from_ts: from, to_ts: to }),
       sb.from('tg_channel_meta_snapshots')
         .select('chat_username, subscribers, notifications_enabled_pct, notifications_enabled_count, captured_at, admins_count, kicked_count, banned_count, pinned_msg_id, can_view_stats, invite_link, title, description, slowmode_seconds, is_verified')
@@ -41,21 +41,50 @@ export async function GET(request) {
         .gte('snapshot_date', from.slice(0, 10))
         .lte('snapshot_date', to.slice(0, 10))
         .order('snapshot_date', { ascending: true }),
-      sb.rpc('tg_channel_subs_deltas_v1', { from_ts: from, to_ts: to }),
+      // Real daily joined/left from Telegram broadcast stats followersGraph
+      sb.from('tg_followers_daily')
+        .select('chat_username, date, joined, left_count')
+        .gte('date', from.slice(0, 10))
+        .lte('date', to.slice(0, 10)),
+      // Real daily total subs from growthGraph (used for historical end-of-range subs)
+      sb.from('tg_growth_daily')
+        .select('chat_username, date, total_subs')
+        .gte('date', from.slice(0, 10))
+        .lte('date', to.slice(0, 10))
+        .order('date', { ascending: true }),
       sb.from('tg_posts').select('created_at').order('created_at', { ascending: false }).limit(1).maybeSingle(),
     ]);
 
-    if (postsRes.error)  throw new Error('rpc: ' + postsRes.error.message);
-    if (metaRes.error)   throw new Error('meta: ' + metaRes.error.message);
-    if (snapsRes.error)  throw new Error('snaps: ' + snapsRes.error.message);
-    if (deltasRes.error) throw new Error('deltas: ' + deltasRes.error.message);
+    if (postsRes.error)     throw new Error('rpc: '     + postsRes.error.message);
+    if (metaRes.error)      throw new Error('meta: '    + metaRes.error.message);
+    if (snapsRes.error)     throw new Error('snaps: '   + snapsRes.error.message);
+    if (followersRes.error) throw new Error('followers: ' + followersRes.error.message);
+    if (growthRes.error)    throw new Error('growth: '  + growthRes.error.message);
 
     const postMetrics = postsRes.data || [];
 
-    // Index deltas by channel
-    const deltasByChannel = {};
-    for (const d of (deltasRes.data || [])) {
-      deltasByChannel[d.chat_username.toLowerCase()] = d;
+    // Aggregate joined/left per channel for this range (ground truth from Telegram)
+    const followersByChannel = {};
+    for (const r of (followersRes.data || [])) {
+      const u = r.chat_username.toLowerCase();
+      if (!followersByChannel[u]) followersByChannel[u] = { gained: 0, lost: 0, days: 0 };
+      followersByChannel[u].gained += r.joined || 0;
+      followersByChannel[u].lost   += r.left_count || 0;
+      followersByChannel[u].days   += 1;
+    }
+
+    // Build per-channel growth endpoints (start/end subscribers) from growthGraph data
+    const growthByChannel = {};
+    for (const r of (growthRes.data || [])) {
+      const u = r.chat_username.toLowerCase();
+      if (!growthByChannel[u]) growthByChannel[u] = { startSubs: null, endSubs: null, startDate: null, endDate: null };
+      // Since data is sorted asc, first row = start, last row = end
+      if (growthByChannel[u].startSubs === null) {
+        growthByChannel[u].startSubs = r.total_subs;
+        growthByChannel[u].startDate = r.date;
+      }
+      growthByChannel[u].endSubs = r.total_subs;
+      growthByChannel[u].endDate = r.date;
     }
 
     // Latest meta per channel (results sorted DESC, take first per channel)
@@ -85,11 +114,12 @@ export async function GET(request) {
     ]);
 
     const channels = Array.from(allChannels).map((u) => {
-      const m   = latestMeta[u] || {};
-      const a   = aggByChannel[u] || {};
-      const d   = deltasByChannel[u] || {};
-      const startSubs   = startSubsByChannel[u];
-      const currentSubs = m.subscribers ?? null;
+      const m       = latestMeta[u] || {};
+      const a       = aggByChannel[u] || {};
+      const fol     = followersByChannel[u] || null;
+      const gr      = growthByChannel[u] || null;
+      const startSubsLegacy = startSubsByChannel[u];
+      const currentSubs     = m.subscribers ?? null;
 
       const totalEng       = (a.total_forwards || 0) + (a.total_reactions || 0) + (a.total_replies || 0);
       const engagementRate = a.total_views ? (totalEng / Number(a.total_views)) * 100 : null;
@@ -103,6 +133,15 @@ export async function GET(request) {
       else if (hoursSinceLastPost < 24)     status = 'active';
       else if (hoursSinceLastPost < 48)     status = 'quiet';
       else                                  status = 'silent';
+
+      // Subs: prefer growthGraph end-of-range value (which equals current when range ends today)
+      const endSubs = gr?.endSubs ?? currentSubs;
+      const startSubs = gr?.startSubs ?? startSubsLegacy ?? null;
+
+      // Gained/Lost: ground truth from followersGraph
+      const subsGained = fol?.gained ?? null;
+      const subsLost   = fol?.lost ?? null;
+      const subsNet    = (subsGained !== null && subsLost !== null) ? subsGained - subsLost : null;
 
       return {
         username:            u,
@@ -123,13 +162,13 @@ export async function GET(request) {
         canViewStats:        m.can_view_stats,
         metaCapturedAt:      m.captured_at,
 
-        // Subs deltas (from new RPC)
-        subsGained:          d.subs_gained ?? null,
-        subsLost:            d.subs_lost ?? null,
-        subsNet:             d.subs_net ?? null,
-        subsDataPoints:      d.data_points ?? 0,
-        startSubs:           d.start_subs ?? (startSubs ?? null),
-        endSubs:             d.end_subs ?? null,
+        // Real Telegram follower deltas (joined/left per day)
+        subsGained,
+        subsLost,
+        subsNet,
+        subsDataPoints:      fol?.days ?? 0,
+        startSubs,
+        endSubs,
 
         // Range aggregates
         posts:               a.posts ?? 0,
@@ -169,6 +208,8 @@ export async function GET(request) {
           return (!max || m.captured_at > max) ? m.captured_at : max;
         }, null),
         snapshotDaysInRange: snapsRes.data?.length || 0,
+        followersDaysInRange: followersRes.data?.length || 0,
+        growthDaysInRange:    growthRes.data?.length   || 0,
       },
     });
   } catch (e) {
