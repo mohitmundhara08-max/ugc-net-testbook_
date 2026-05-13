@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
 import ChannelsSectionV2 from './channels-section';
+import OverviewSectionV2 from './overview-section';
 
 // ── Snapshot storage key ────────────────────────────────────────────────────
 const SNAPSHOT_KEY = 'tg_sub_snapshots_v1';
@@ -1764,7 +1765,7 @@ export default function Dashboard() {
       <style>{`@keyframes spin{to{transform:rotate(360deg)}} * { box-sizing: border-box; }`}</style>
       <Sidebar active={section} onNav={setSection} totalSubs={totalSubs} lastFetched={lastFetched} />
       <main style={{ flex:1,padding:'28px 32px',overflowY:'auto',minWidth:0 }}>
-        {section==='overview'    && <OverviewSection     channels={channels} postCounts={postCounts} postItems={postItems} lastFetched={lastFetched} onNavigate={setSection} snapshots={snapshots} />}
+        {section==='overview'    && <OverviewSectionV2 />}
         {section==='channels'    && <ChannelsSectionV2 />}
         {section==='competitive' && <CompetitiveSection  channels={channels} competitorData={compData} competitorLoading={compLoading} />}
         {section==='insights'    && <InsightsSection     channels={channels} competitorData={compData} selectedDate={selDate} />}
