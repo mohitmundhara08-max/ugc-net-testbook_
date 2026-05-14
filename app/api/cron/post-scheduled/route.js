@@ -81,10 +81,22 @@ export async function GET(request) {
   if (!BOT_TOKEN) return Response.json({ ok: false, error: 'TELEGRAM_BOT_TOKEN not configured' }, { status: 500 });
 
   const startedAt = new Date().toISOString();
-  const results   = { picked: 0, posted: 0, failed: 0, items: [] };
+  const results   = { picked: 0, posted: 0, failed: 0, skipped_locked: 0, items: [] };
 
   try {
-    // Atomically pick up to 20 due posts (status=scheduled, scheduled_at <= now)
+    // ─── Watchdog: reset any rows stuck in 'posting' for >5 min ───
+    // (Worker crashed/timed out mid-flight, otherwise these would sit forever)
+    const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    const { data: stale, error: staleErr } = await sb
+      .from('tg_scheduled_posts')
+      .update({ status: 'scheduled', error_message: 'reset by watchdog (was stuck posting)' })
+      .eq('status', 'posting')
+      .lt('updated_at', fiveMinAgo)
+      .select('id');
+    if (staleErr) console.warn('[cron] watchdog error:', staleErr.message);
+    if (stale && stale.length) console.log('[cron] watchdog reset', stale.length, 'stuck posts');
+
+    // ─── Atomically pick up to 20 due posts (status=scheduled, scheduled_at <= now) ───
     const { data: dueRows, error: pickErr } = await sb
       .from('tg_scheduled_posts')
       .select('*')
@@ -96,14 +108,23 @@ export async function GET(request) {
     results.picked = dueRows?.length || 0;
 
     for (const post of (dueRows || [])) {
-      // Mark posting (lock)
-      const { error: lockErr } = await sb
+      // ─── Real idempotent lock: only proceed if WE flipped the status ───
+      // Returns the row only if the UPDATE matched (still 'scheduled'). If empty,
+      // another worker beat us — skip without error.
+      const { data: locked, error: lockErr } = await sb
         .from('tg_scheduled_posts')
         .update({ status: 'posting' })
         .eq('id', post.id)
-        .eq('status', 'scheduled');  // optimistic: only flip if still scheduled
+        .eq('status', 'scheduled')
+        .select();
       if (lockErr) {
         results.items.push({ id: post.id, ok: false, error: 'lock_failed: ' + lockErr.message });
+        continue;
+      }
+      if (!locked || locked.length === 0) {
+        // Another concurrent worker already locked this row → skip
+        results.skipped_locked += 1;
+        results.items.push({ id: post.id, ok: false, error: 'skipped_already_locked' });
         continue;
       }
 
