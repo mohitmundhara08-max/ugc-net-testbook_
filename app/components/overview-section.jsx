@@ -48,6 +48,10 @@ function fmtNum(n) {
   if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K';
   return Math.round(n).toLocaleString('en-IN');
 }
+function fmtFull(n) {
+  if (n === null || n === undefined || !isFinite(n)) return '—';
+  return Math.round(n).toLocaleString('en-IN');
+}
 function fmtPct(n, d = 1) {
   if (n === null || n === undefined || !isFinite(n)) return '—';
   return n.toFixed(d) + '%';
@@ -55,6 +59,10 @@ function fmtPct(n, d = 1) {
 function fmtSigned(n) {
   if (n === null || n === undefined || !isFinite(n)) return '—';
   return (n > 0 ? '+' : '') + fmtNum(n);
+}
+function fmtSignedFull(n) {
+  if (n === null || n === undefined || !isFinite(n)) return '—';
+  return (n > 0 ? '+' : '') + fmtFull(n);
 }
 function deltaPct(curr, prev) {
   if (curr === null || curr === undefined || prev === null || prev === undefined || prev === 0) return null;
@@ -619,13 +627,13 @@ function DailyGrowthChart({ dailyByChannel, channels, subjects }) {
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '2px 8px' }}>
             <span style={{ color: '#86efac' }}>Joined</span>
-            <span style={{ fontWeight: 700, textAlign: 'right' }}>+{fmtNum(hovered.joined)}</span>
+            <span style={{ fontWeight: 700, textAlign: 'right' }}>+{fmtFull(hovered.joined)}</span>
             <span style={{ color: '#fca5a5' }}>Left</span>
-            <span style={{ fontWeight: 700, textAlign: 'right' }}>-{fmtNum(hovered.left)}</span>
+            <span style={{ fontWeight: 700, textAlign: 'right' }}>-{fmtFull(hovered.left)}</span>
             <span style={{ color: '#cbd5e1', borderTop: '1px solid #334155', paddingTop: 3 }}>Net</span>
             <span style={{ fontWeight: 800, textAlign: 'right', borderTop: '1px solid #334155', paddingTop: 3,
               color: (hovered.joined - hovered.left) >= 0 ? '#86efac' : '#fca5a5' }}>
-              {fmtSigned(hovered.joined - hovered.left)}
+              {fmtSignedFull(hovered.joined - hovered.left)}
             </span>
           </div>
           {hoveredTopChannels.length > 0 && (
@@ -641,7 +649,7 @@ function DailyGrowthChart({ dailyByChannel, channels, subjects }) {
                       {subjects[c.channel] || c.channel}
                     </span>
                     <span style={{ color: net >= 0 ? '#86efac' : '#fca5a5', fontWeight: 700 }}>
-                      {fmtSigned(net)}
+                      {fmtSignedFull(net)}
                     </span>
                   </div>
                 );
@@ -827,10 +835,10 @@ function SubscribersChart({ growthByChannel, channels, subjects }) {
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '2px 8px' }}>
             <span style={{ color: '#cbd5e1' }}>Total subs</span>
-            <span style={{ fontWeight: 800, textAlign: 'right' }}>{fmtNum(hovered.total)}</span>
+            <span style={{ fontWeight: 800, textAlign: 'right' }}>{fmtFull(hovered.total)}</span>
             <span style={{ color: '#cbd5e1' }}>vs start</span>
             <span style={{ fontWeight: 700, textAlign: 'right', color: hoveredDelta >= 0 ? '#86efac' : '#fca5a5' }}>
-              {fmtSigned(hoveredDelta)}
+              {fmtSignedFull(hoveredDelta)}
             </span>
           </div>
           {hoveredTopChannels.length > 0 && (
@@ -843,7 +851,7 @@ function SubscribersChart({ growthByChannel, channels, subjects }) {
                   <span style={{ color: '#e2e8f0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {subjects[ch] || ch}
                   </span>
-                  <span style={{ color: '#cbd5e1', fontWeight: 700 }}>{fmtNum(total)}</span>
+                  <span style={{ color: '#cbd5e1', fontWeight: 700 }}>{fmtFull(total)}</span>
                 </div>
               ))}
             </div>
