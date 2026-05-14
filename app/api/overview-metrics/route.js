@@ -34,12 +34,14 @@ async function fetchPeriodChannels(from, to) {
     sb.from('tg_followers_daily')
       .select('chat_username, date, joined, left_count')
       .gte('date', from.slice(0, 10))
-      .lte('date', to.slice(0, 10)),
+      .lte('date', to.slice(0, 10))
+      .limit(50000),
     sb.from('tg_growth_daily')
       .select('chat_username, date, total_subs')
       .gte('date', from.slice(0, 10))
       .lte('date', to.slice(0, 10))
-      .order('date', { ascending: true }),
+      .order('date', { ascending: true })
+      .limit(50000),
   ]);
   if (postsRes.error)     throw new Error('rpc: ' + postsRes.error.message);
   if (metaRes.error)      throw new Error('meta: ' + metaRes.error.message);
@@ -139,7 +141,8 @@ export async function GET(request) {
         .select('chat_username, date, joined, left_count')
         .gte('date', from.slice(0, 10))
         .lte('date', to.slice(0, 10))
-        .order('date', { ascending: true }),
+        .order('date', { ascending: true })
+        .limit(50000),
     ]);
 
     if (topPostsRes.error)  throw new Error('top_posts: ' + topPostsRes.error.message);
