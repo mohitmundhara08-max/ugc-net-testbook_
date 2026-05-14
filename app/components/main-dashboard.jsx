@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react';
 import ChannelsSectionV2 from './channels-section';
 import OverviewSectionV2 from './overview-section';
 import ContentCalendarSectionV2 from './content-calendar-section';
+import CompetitiveSectionV2 from './competitive-section';
 
 // ── Snapshot storage key ────────────────────────────────────────────────────
 const SNAPSHOT_KEY = 'tg_sub_snapshots_v1';
@@ -1768,7 +1769,7 @@ export default function Dashboard() {
       <main style={{ flex:1,padding:'28px 32px',overflowY:'auto',minWidth:0 }}>
         {section==='overview'    && <OverviewSectionV2 />}
         {section==='channels'    && <ChannelsSectionV2 />}
-        {section==='competitive' && <CompetitiveSection  channels={channels} competitorData={compData} competitorLoading={compLoading} />}
+        {section==='competitive' && <CompetitiveSectionV2 />}
         {section==='insights'    && <InsightsSection     channels={channels} competitorData={compData} selectedDate={selDate} />}
         {section==='calendar'    && <ContentCalendarSectionV2 channels={channels} />}
         {section==='youtube'     && <YTCalendarSection   channels={channels} />}
