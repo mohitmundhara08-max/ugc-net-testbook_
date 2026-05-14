@@ -45,13 +45,15 @@ export async function GET(request) {
       sb.from('tg_followers_daily')
         .select('chat_username, date, joined, left_count')
         .gte('date', from.slice(0, 10))
-        .lte('date', to.slice(0, 10)),
+        .lte('date', to.slice(0, 10))
+        .limit(50000),
       // Real daily total subs from growthGraph (used for historical end-of-range subs)
       sb.from('tg_growth_daily')
         .select('chat_username, date, total_subs')
         .gte('date', from.slice(0, 10))
         .lte('date', to.slice(0, 10))
-        .order('date', { ascending: true }),
+        .order('date', { ascending: true })
+        .limit(50000),
       sb.from('tg_posts').select('created_at').order('created_at', { ascending: false }).limit(1).maybeSingle(),
     ]);
 
