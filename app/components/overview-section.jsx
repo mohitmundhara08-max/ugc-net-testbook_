@@ -237,6 +237,15 @@ export default function OverviewSection() {
       {/* Hero KPIs */}
       <HeroKPIStrip current={aggCurr} prior={aggPrior} />
 
+      {/* Total Subscribers Chart (full width) — moved above Daily Growth */}
+      <div style={{ marginBottom: 14 }}>
+        <SubscribersChart
+          growthByChannel={data?.growthByChannel || []}
+          channels={currChannels}
+          subjects={SUBJECTS}
+        />
+      </div>
+
       {/* Daily Growth Chart + Top Movers */}
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.5fr) minmax(0, 1fr)', gap: 14, marginBottom: 14 }}>
         <DailyGrowthChart
@@ -248,15 +257,6 @@ export default function OverviewSection() {
           topGainers={topGainers}
           topLosers={topLosers}
           topPosts={filteredTopPosts}
-          subjects={SUBJECTS}
-        />
-      </div>
-
-      {/* Total Subscribers Chart (full width) */}
-      <div style={{ marginBottom: 14 }}>
-        <SubscribersChart
-          growthByChannel={data?.growthByChannel || []}
-          channels={currChannels}
           subjects={SUBJECTS}
         />
       </div>
