@@ -26,18 +26,38 @@ export default function FacultySection() {
   useEffect(() => { load(); }, []);
 
   async function assign(chat_username, faculty_email) {
-    setSavingChan(chat_username);
+    if (!faculty_email) {
+      // No faculty_email = treat as remove (legacy callsite); but in M:N we use removeMapping explicitly
+      return;
+    }
+    setSavingChan(chat_username + ':' + faculty_email);
     try {
       const r = await fetch('/api/faculty', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chat_username, faculty_email: faculty_email || null }),
+        body: JSON.stringify({ chat_username, faculty_email }),
       });
       const d = await r.json();
       if (!d.ok) throw new Error(d.error);
       await load();
     } catch (e) {
       alert('Assignment failed: ' + e.message);
+    } finally {
+      setSavingChan(null);
+    }
+  }
+
+  async function removeMapping(chat_username, faculty_email) {
+    setSavingChan(chat_username + ':' + faculty_email);
+    try {
+      const r = await fetch(`/api/faculty?chat_username=${encodeURIComponent(chat_username)}&faculty_email=${encodeURIComponent(faculty_email)}`, {
+        method: 'DELETE',
+      });
+      const d = await r.json();
+      if (!d.ok) throw new Error(d.error);
+      await load();
+    } catch (e) {
+      alert('Remove failed: ' + e.message);
     } finally {
       setSavingChan(null);
     }
@@ -96,7 +116,7 @@ export default function FacultySection() {
         <HeroCard label="👥 Faculty"           value={meta.total_faculty} color="#0f172a" />
         <HeroCard label="📢 Channels mapped"    value={`${meta.assigned_channels}/${meta.total_channels}`} color="#16a34a" />
         <HeroCard label="🔍 Unassigned"        value={meta.unassigned_channels || 0} color={(meta.unassigned_channels||0) > 0 ? '#dc2626' : '#16a34a'} />
-        <HeroCard label="📅 Calendar status"   value="Phase 2" sub="Coming soon" color="#94a3b8" />
+        <HeroCard label="🤝 Co-taught channels" value={meta.multi_faculty_channels || 0} sub={`of ${meta.total_channels} total`} color="#f59e0b" />
       </div>
 
       {/* Search */}
@@ -116,7 +136,7 @@ export default function FacultySection() {
           <strong>⚠ {unassigned.length} channel{unassigned.length > 1 ? 's' : ''} unassigned.</strong> Pick a faculty for each:
           <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
             {unassigned.map((c) => (
-              <UnassignedRow key={c.username} channel={c} faculty={faculty} onAssign={assign} saving={savingChan === c.username} />
+              <UnassignedRow key={c.username} channel={c} faculty={faculty} onAssign={assign} savingChan={savingChan} />
             ))}
           </div>
         </div>
@@ -125,7 +145,15 @@ export default function FacultySection() {
       {/* Faculty cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: 12 }}>
         {filteredFaculty.map((f) => (
-          <FacultyCard key={f.email} faculty={f} allFaculty={faculty} onAssign={assign} savingChan={savingChan} />
+          <FacultyCard
+            key={f.email}
+            faculty={f}
+            allFaculty={faculty}
+            allChannels={data?.channels || []}
+            onAdd={(chan) => assign(chan, f.email)}
+            onRemove={(chan) => removeMapping(chan, f.email)}
+            savingChan={savingChan}
+          />
         ))}
       </div>
       {filteredFaculty.length === 0 && (
@@ -147,8 +175,15 @@ function HeroCard({ label, value, sub, color }) {
   );
 }
 
-function FacultyCard({ faculty, allFaculty, onAssign, savingChan }) {
+function FacultyCard({ faculty, allFaculty, allChannels, onAdd, onRemove, savingChan }) {
+  const [adding, setAdding] = useState(false);
+  const [picker, setPicker] = useState('');
+
   const chCount = (faculty.channels || []).length;
+  const assignedSet = new Set((faculty.channels || []).map((c) => c.chat_username));
+  // Channels this faculty doesn't yet have (to populate the add dropdown)
+  const addableChannels = (allChannels || []).filter((c) => !assignedSet.has(c.username));
+
   return (
     <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: 10, overflow: 'hidden' }}>
       <div style={{ padding: '12px 14px', borderBottom: '1px solid #f1f5f9', background: '#f8fafc' }}>
@@ -168,29 +203,83 @@ function FacultyCard({ faculty, allFaculty, onAssign, savingChan }) {
       </div>
 
       <div style={{ padding: '10px 14px' }}>
-        <div style={{ fontSize: 10, color: '#94a3b8', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: 6 }}>
-          Channels ({chCount})
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+          <div style={{ fontSize: 10, color: '#94a3b8', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+            Channels ({chCount})
+          </div>
+          {!adding && addableChannels.length > 0 && (
+            <button
+              onClick={() => setAdding(true)}
+              style={{ padding: '2px 8px', border: '1px solid #cbd5e1', background: 'white', color: '#475569', borderRadius: 4, fontSize: 10, fontWeight: 600, cursor: 'pointer' }}
+            >
+              + Add channel
+            </button>
+          )}
         </div>
+
         {chCount === 0 ? (
           <div style={{ fontSize: 12, color: '#94a3b8', fontStyle: 'italic', padding: '4px 0' }}>No channels assigned.</div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            {(faculty.channels || []).map((c) => (
-              <div key={c.chat_username} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', background: '#f8fafc', borderRadius: 6 }}>
-                <a href={`https://t.me/${c.chat_username}`} target="_blank" rel="noopener noreferrer" style={{ flex: 1, minWidth: 0, color: '#0f172a', textDecoration: 'none', fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  @{c.chat_username}
-                </a>
-                <span style={{ fontSize: 10, color: '#64748b' }}>{c.subject}</span>
-                <button
-                  onClick={() => onAssign(c.chat_username, null)}
-                  disabled={savingChan === c.chat_username}
-                  title="Unassign this channel"
-                  style={{ padding: '2px 6px', border: '1px solid #fecaca', background: 'white', color: '#991b1b', borderRadius: 4, fontSize: 10, fontWeight: 600, cursor: 'pointer' }}
-                >
-                  {savingChan === c.chat_username ? '⏳' : 'unassign'}
-                </button>
-              </div>
-            ))}
+            {(faculty.channels || []).map((c) => {
+              const coCount = (c.co_faculty || []).length;
+              const savingThis = savingChan === c.chat_username + ':' + faculty.email;
+              return (
+                <div key={c.chat_username} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 8px', background: '#f8fafc', borderRadius: 6 }}>
+                  <a href={`https://t.me/${c.chat_username}`} target="_blank" rel="noopener noreferrer" style={{ flex: 1, minWidth: 0, color: '#0f172a', textDecoration: 'none', fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    @{c.chat_username}
+                  </a>
+                  {coCount > 0 && (
+                    <span title={`Shared with ${coCount} other faculty: ${(c.co_faculty || []).join(', ')}`} style={{ background: '#fef3c7', color: '#92400e', padding: '1px 5px', borderRadius: 8, fontSize: 9, fontWeight: 700, whiteSpace: 'nowrap' }}>
+                      🤝 +{coCount}
+                    </span>
+                  )}
+                  <span style={{ fontSize: 10, color: '#64748b', whiteSpace: 'nowrap' }}>{c.subject}</span>
+                  <button
+                    onClick={() => onRemove(c.chat_username)}
+                    disabled={savingThis}
+                    title="Remove this faculty from this channel (other faculty unaffected)"
+                    style={{ padding: '2px 6px', border: '1px solid #fecaca', background: 'white', color: '#991b1b', borderRadius: 4, fontSize: 10, fontWeight: 600, cursor: 'pointer' }}
+                  >
+                    {savingThis ? '⏳' : 'remove'}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {adding && (
+          <div style={{ marginTop: 10, padding: 10, background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 6 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: '#0369a1', marginBottom: 6 }}>Add a channel to {faculty.name || faculty.email}</div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <select
+                value={picker}
+                onChange={(e) => setPicker(e.target.value)}
+                style={{ flex: 1, padding: '5px 8px', border: '1px solid #bae6fd', borderRadius: 4, fontSize: 11, background: 'white' }}
+              >
+                <option value="">Pick a channel…</option>
+                {addableChannels.map((c) => (
+                  <option key={c.username} value={c.username}>
+                    @{c.username} · {c.subject}
+                    {c.faculty.length > 0 ? ` · already has ${c.faculty.length} faculty` : ''}
+                  </option>
+                ))}
+              </select>
+              <button
+                onClick={async () => { if (picker) { await onAdd(picker); setPicker(''); setAdding(false); } }}
+                disabled={!picker}
+                style={{ padding: '5px 12px', border: 'none', background: picker ? '#0369a1' : '#cbd5e1', color: 'white', borderRadius: 4, fontSize: 11, fontWeight: 600, cursor: picker ? 'pointer' : 'not-allowed' }}
+              >
+                Add
+              </button>
+              <button
+                onClick={() => { setAdding(false); setPicker(''); }}
+                style={{ padding: '5px 10px', border: '1px solid #cbd5e1', background: 'white', color: '#64748b', borderRadius: 4, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
+              >
+                Cancel
+              </button>
+            </div>
           </div>
         )}
       </div>
@@ -198,8 +287,9 @@ function FacultyCard({ faculty, allFaculty, onAssign, savingChan }) {
   );
 }
 
-function UnassignedRow({ channel, faculty, onAssign, saving }) {
+function UnassignedRow({ channel, faculty, onAssign, savingChan }) {
   const [selected, setSelected] = useState('');
+  const saving = selected && savingChan === channel.username + ':' + selected;
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'white', padding: '6px 10px', borderRadius: 6, border: '1px solid #fde68a' }}>
       <div style={{ flex: 1, minWidth: 0 }}>
